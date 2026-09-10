@@ -1,0 +1,91 @@
+{
+  "name": "xirang-retrieval-starter-v1",
+  "description": "不含个人数据的 0.4.0 检索基线样例集。后续应使用真实资料扩展到 80～120 条人工标注查询。",
+  "chunks": [
+    {
+      "id": "start-action",
+      "sourceId": "guide",
+      "sourceTitle": "低阻力行动指南",
+      "heading": "先开始，再完善",
+      "content": "当任务让人抗拒时，不要先制定完整计划。把任务缩小成一个可以立刻完成的动作，例如打开文档并写下标题。本轮完成标准也应该足够具体。"
+    },
+    {
+      "id": "task-choice",
+      "sourceId": "guide",
+      "sourceTitle": "低阻力行动指南",
+      "heading": "多个任务如何选择",
+      "content": "同时面对多件事时，只保留三个候选任务，再综合重要性、紧迫性和容易启动程度选择当前行动。推荐结果需要展示规则依据。"
+    },
+    {
+      "id": "phone-distraction",
+      "sourceId": "focus",
+      "sourceTitle": "现实专注手册",
+      "heading": "减少手机分心",
+      "content": "开始专注前将手机调成静音并放到看不见的位置。出现与当前任务无关的念头时，先写进分心停车场，不要立刻切换任务。"
+    },
+    {
+      "id": "pomodoro",
+      "sourceId": "focus",
+      "sourceTitle": "现实专注手册",
+      "heading": "番茄钟节奏",
+      "content": "番茄钟采用二十五分钟专注和五分钟短休息。每完成四个番茄后进入十五分钟长休息，倒计时刷新后仍应能够恢复。"
+    },
+    {
+      "id": "pdf-import",
+      "sourceId": "knowledge",
+      "sourceTitle": "知识库导入说明",
+      "heading": "PDF 文档",
+      "content": "文字型 PDF 可以读取文字层，按页提取正文并保留页码。扫描 PDF 或没有文字层的文件当前需要 OCR，不能保存为空知识来源。"
+    },
+    {
+      "id": "docx-import",
+      "sourceId": "knowledge",
+      "sourceTitle": "知识库导入说明",
+      "heading": "Word DOCX 文档",
+      "content": "DOCX 文档会提取标题、段落、列表和表格，再转换为可分块的结构化正文。系统不保存原始二进制文件。"
+    },
+    {
+      "id": "incremental-chunks",
+      "sourceId": "knowledge",
+      "sourceTitle": "知识库存储设计",
+      "heading": "增量分块",
+      "content": "系统使用 SHA-256 内容哈希判断资料是否变化。内容没有变化时复用已有文本块，只重建发生变化、缺少分块或处理器版本变化的来源。"
+    },
+    {
+      "id": "privacy-permission",
+      "sourceId": "privacy",
+      "sourceTitle": "隐私与授权边界",
+      "heading": "逐来源授权",
+      "content": "个人笔记默认不进入知识库，只有用户主动授权后才保存快照。取消授权或移除资料时，会同步删除关联的权限和文本块记录。"
+    },
+    {
+      "id": "retrieval-trace",
+      "sourceId": "retrieval",
+      "sourceTitle": "RAG 检索实验台",
+      "heading": "结果可解释性",
+      "content": "每条检索结果显示资料名称、章节或 PDF 页码、原文行号、命中词、相关度分数和检索耗时，使结果能够回到原始来源。"
+    }
+  ],
+  "queries": [
+    { "query": "任务很抗拒时怎么开始", "relevantChunkIds": ["start-action"] },
+    { "query": "第一步应该缩小到什么程度", "relevantChunkIds": ["start-action"] },
+    { "query": "有很多任务时应该怎么选", "relevantChunkIds": ["task-choice"] },
+    { "query": "重要性紧迫性容易启动", "relevantChunkIds": ["task-choice"] },
+    { "query": "如何减少手机造成的分心", "relevantChunkIds": ["phone-distraction"] },
+    { "query": "分心念头可以记录在哪里", "relevantChunkIds": ["phone-distraction"] },
+    { "query": "番茄钟的休息时间", "relevantChunkIds": ["pomodoro"] },
+    { "query": "四个番茄以后休息多久", "relevantChunkIds": ["pomodoro"] },
+    { "query": "扫描 PDF 为什么不能导入", "relevantChunkIds": ["pdf-import"] },
+    { "query": "PDF 页码是否会保留", "relevantChunkIds": ["pdf-import", "retrieval-trace"] },
+    { "query": "DOCX 表格如何处理", "relevantChunkIds": ["docx-import"] },
+    { "query": "是否保存 Word 原文件", "relevantChunkIds": ["docx-import"] },
+    { "query": "资料没变化会重复分块吗", "relevantChunkIds": ["incremental-chunks"] },
+    { "query": "SHA-256 用来做什么", "relevantChunkIds": ["incremental-chunks"] },
+    { "query": "个人笔记默认会进入知识库吗", "relevantChunkIds": ["privacy-permission"] },
+    { "query": "取消授权后文本块怎么处理", "relevantChunkIds": ["privacy-permission"] },
+    { "query": "检索结果怎样追溯原文", "relevantChunkIds": ["retrieval-trace"] },
+    { "query": "结果会显示哪些评分信息", "relevantChunkIds": ["retrieval-trace"] },
+    { "query": "量子芯片的超导实验温度", "relevantChunkIds": [] },
+    { "query": "火星探测器什么时候返回地球", "relevantChunkIds": [] }
+  ]
+}

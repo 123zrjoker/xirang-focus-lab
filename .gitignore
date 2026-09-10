@@ -1,0 +1,17 @@
+node_modules/
+dist/
+release/
+backups/
+*.local
+*.log
+*.tsbuildinfo
+.env
+.env.*
+!.env.example
+.DS_Store
+__pycache__/
+.pytest_cache/
+*.py[cod]
+.model-cache/
+server/data/
+artifacts/evals/*.json
