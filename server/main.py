@@ -22,6 +22,12 @@ from .semantic import (
     semantic_index,
 )
 from .hybrid import RERANK_ENGINE_NAME, RRF_ENGINE_NAME, hybrid_search, reranker_provider
+from .generation import (
+    ProviderResponseError,
+    ProviderUnavailableError,
+    build_context,
+    generation_provider,
+)
 
 
 def to_camel(value: str) -> str:
@@ -135,6 +141,65 @@ class IndexSyncResponse(ApiModel):
     dimensions: int
 
 
+class RagAnswerRequest(ApiModel):
+    query: str = Field(min_length=1, max_length=MAX_QUERY_CHARACTERS)
+    corpus_fingerprint: str = Field(min_length=64, max_length=64)
+    retrieval_mode: Literal["hybrid", "hybrid_rerank"] = "hybrid_rerank"
+    top_k: int = Field(default=6, ge=1, le=8)
+    preview_only: bool = False
+
+
+class RagEvidenceResponse(ApiModel):
+    reference_id: str
+    chunk_id: str
+    source_id: str
+    source_title: str
+    heading: str
+    content: str
+    start_line: int
+    end_line: int
+    start_offset: int
+    end_offset: int
+    retrieval_score: float
+    truncated: bool
+    instruction_flagged: bool
+
+
+class RagRetrievalResponse(ApiModel):
+    engine: str
+    mode: str
+    confidence: Literal["strong", "possible", "none"]
+    duration_ms: float
+
+
+class RagContextStatsResponse(ApiModel):
+    evidence_count: int
+    used_characters: int
+    omitted_count: int
+    flagged_reference_ids: list[str]
+
+
+class RagGenerationResponse(ApiModel):
+    duration_ms: float
+    input_tokens: Optional[int] = None
+    output_tokens: Optional[int] = None
+
+
+class RagAnswerResponse(ApiModel):
+    status: Literal["context_only", "answered", "refused"]
+    query: str
+    answer: Optional[str]
+    citation_ids: list[str]
+    uncertainties: list[str]
+    evidence: list[RagEvidenceResponse]
+    provider: Optional[str]
+    model: Optional[str]
+    retrieval: RagRetrievalResponse
+    context: RagContextStatsResponse
+    generation: Optional[RagGenerationResponse] = None
+    warnings: list[str] = Field(default_factory=list)
+
+
 app = FastAPI(
     title="Xirang Retrieval Service",
     description="Local keyword and semantic retrieval service for the Xirang knowledge base.",
@@ -171,6 +236,7 @@ def health() -> dict:
             "available": reranker_provider.available,
             "checksum": reranker_provider.checksum,
         },
+        "generation": generation_provider.status(),
         "index": index,
     }
 
@@ -300,6 +366,122 @@ def search(request: SearchRequest) -> SearchResponse:
             chunk_count=output.chunk_count,
             source_count=output.source_count,
             average_chunk_length=output.average_chunk_length,
+        ),
+        warnings=warnings,
+    )
+
+
+@app.post("/api/rag/answer", response_model=RagAnswerResponse)
+def answer_with_rag(request: RagAnswerRequest) -> RagAnswerResponse:
+    warnings: list[str] = []
+    status = semantic_index.status()
+    if status.get("fingerprint") != request.corpus_fingerprint:
+        raise HTTPException(status_code=409, detail="知识库已变化，请先同步本地向量索引。")
+    try:
+        chunks = semantic_index.chunks()
+        active_reranker = None
+        if request.retrieval_mode == "hybrid_rerank":
+            if reranker_provider.available:
+                active_reranker = reranker_provider
+            else:
+                warnings.append("多语言 Cross-Encoder 尚未准备好，上下文检索已降级为 RRF。")
+        retrieval = hybrid_search(
+            request.query,
+            chunks,
+            semantic_index,
+            request.top_k,
+            reranker=active_reranker,
+        )
+        engine = RERANK_ENGINE_NAME if active_reranker else RRF_ENGINE_NAME
+    except IndexNotReadyError as error:
+        raise HTTPException(status_code=409, detail=str(error)) from error
+    except ModelUnavailableError as error:
+        raise HTTPException(status_code=503, detail=str(error)) from error
+
+    context = build_context(retrieval.results)
+    if context.flagged_reference_ids:
+        warnings.append(
+            "部分资料包含疑似指令文本，已标记为不可信证据且不会作为系统指令执行："
+            + "、".join(context.flagged_reference_ids)
+        )
+    evidence = [RagEvidenceResponse(
+        reference_id=item.reference_id,
+        chunk_id=item.chunk_id,
+        source_id=item.source_id,
+        source_title=item.source_title,
+        heading=item.heading,
+        content=item.content,
+        start_line=item.start_line,
+        end_line=item.end_line,
+        start_offset=item.start_offset,
+        end_offset=item.end_offset,
+        retrieval_score=round(item.retrieval_score, 6),
+        truncated=item.truncated,
+        instruction_flagged=item.instruction_flagged,
+    ) for item in context.evidence]
+    retrieval_response = RagRetrievalResponse(
+        engine=engine,
+        mode=request.retrieval_mode,
+        confidence=retrieval.confidence,
+        duration_ms=retrieval.duration_ms,
+    )
+    context_response = RagContextStatsResponse(
+        evidence_count=len(context.evidence),
+        used_characters=context.used_characters,
+        omitted_count=context.omitted_count,
+        flagged_reference_ids=context.flagged_reference_ids,
+    )
+
+    if not context.evidence:
+        return RagAnswerResponse(
+            status="refused",
+            query=request.query,
+            answer="知识库中没有找到足够依据，未调用 AI 生成平台。",
+            citation_ids=[],
+            uncertainties=[retrieval.no_answer_reason or "当前资料不足以回答。"],
+            evidence=[],
+            provider=None,
+            model=None,
+            retrieval=retrieval_response,
+            context=context_response,
+            warnings=warnings,
+        )
+    if request.preview_only:
+        return RagAnswerResponse(
+            status="context_only",
+            query=request.query,
+            answer=None,
+            citation_ids=[],
+            uncertainties=[],
+            evidence=evidence,
+            provider=None,
+            model=None,
+            retrieval=retrieval_response,
+            context=context_response,
+            warnings=warnings,
+        )
+    try:
+        generated = generation_provider.generate_answer(request.query, context.evidence)
+    except ProviderUnavailableError as error:
+        raise HTTPException(status_code=503, detail=str(error)) from error
+    except ProviderResponseError as error:
+        raise HTTPException(status_code=502, detail=str(error)) from error
+
+    return RagAnswerResponse(
+        status="refused" if generated.payload.refused else "answered",
+        query=request.query,
+        answer=generated.payload.answer,
+        citation_ids=generated.payload.citation_ids,
+        uncertainties=generated.payload.uncertainties,
+        evidence=evidence,
+        provider=generated.provider,
+        model=generated.model,
+        retrieval=retrieval_response,
+        context=context_response,
+        generation=RagGenerationResponse(
+            duration_ms=generated.duration_ms,
+            input_tokens=generated.input_tokens,
+            output_tokens=generated.output_tokens,
         ),
         warnings=warnings,
     )

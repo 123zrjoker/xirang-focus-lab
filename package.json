@@ -2,7 +2,7 @@
   "name": "focus-lab",
   "productName": "息壤",
   "private": true,
-  "version": "0.4.3",
+  "version": "0.4.4",
   "type": "module",
   "main": "electron/main.cjs",
   "scripts": {

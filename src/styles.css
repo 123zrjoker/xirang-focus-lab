@@ -1091,6 +1091,57 @@ p, h1, h2, h3 { margin-top: 0; }
 .retrieval-no-answer > span { width: 34px; height: 34px; display: grid; place-items: center; border-radius: 50%; background: #ebeeeb; color: #748078; font-size: 14px; }
 .retrieval-no-answer strong { font-size: 10px; }
 .retrieval-no-answer p { margin: 4px 0 0; color: var(--muted); font-size: 8px; }
+.rag-answer-lab { margin-top: 17px; padding: 15px; border: 1px solid #cfded2; border-radius: 12px; background: rgba(255,255,255,.72); }
+.rag-answer-heading { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; }
+.rag-answer-heading .eyebrow { margin: 0 0 5px; color: #6c7d72; font-size: 7px; letter-spacing: .13em; }
+.rag-answer-heading h4 { margin: 0; font-size: 14px; }
+.rag-answer-heading > div > p:last-child { margin: 5px 0 0; color: var(--muted); font-size: 8px; line-height: 1.55; }
+.rag-provider-badge { flex: 0 0 auto; display: flex; align-items: center; gap: 6px; padding: 6px 9px; border: 1px solid #e4d7b9; border-radius: 999px; background: #fff9ec; color: #8a6928; font-size: 7px; font-weight: 800; white-space: nowrap; }
+.rag-provider-badge i { width: 6px; height: 6px; border-radius: 50%; background: #c99a3a; }
+.rag-provider-badge.ready { border-color: #cfe0d3; background: #eef7f0; color: var(--green); }
+.rag-provider-badge.ready i { background: #5f9f79; box-shadow: 0 0 0 3px rgba(95,159,121,.12); }
+.rag-answer-actions { display: flex; gap: 8px; margin-top: 13px; }
+.rag-answer-actions .button { padding: 8px 12px; font-size: 8px; }
+.rag-platform-note { margin: 10px 0 0; padding: 8px 10px; border-left: 3px solid #d4ad58; border-radius: 0 7px 7px 0; background: #fffaf0; color: #765f31; font-size: 7px; line-height: 1.6; }
+.rag-error { display: grid; grid-template-columns: 22px 1fr; align-items: center; gap: 8px; margin-top: 10px; padding: 9px 10px; border: 1px solid #edd1ca; border-radius: 8px; background: #fff7f5; }
+.rag-error span { width: 20px; height: 20px; display: grid; place-items: center; border-radius: 50%; background: #f6ded8; color: #9f493c; font-size: 8px; font-weight: 900; }
+.rag-error p { margin: 0; color: #87564d; font-size: 8px; line-height: 1.5; }
+.rag-output { margin-top: 13px; padding-top: 13px; border-top: 1px dashed #d4dfd6; }
+.rag-output-heading { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.rag-output-heading > div { display: flex; align-items: center; gap: 8px; }
+.rag-output-heading strong { font-size: 10px; }
+.rag-output-heading > small { color: var(--muted); font-size: 7px; text-align: right; }
+.rag-status { padding: 5px 7px; border-radius: 999px; background: #e7eee8; color: #59665d; font-size: 7px; font-weight: 850; white-space: nowrap; }
+.rag-status.answered { background: #dfeee3; color: var(--green); }
+.rag-status.refused { background: #fff0d3; color: #856219; }
+.rag-answer-copy { margin: 11px 0 0; padding: 12px; border-radius: 9px; background: #f2f7f3; color: #32463a; font-size: 10px; line-height: 1.75; white-space: pre-wrap; }
+.rag-citation-badges { display: flex; flex-wrap: wrap; align-items: center; gap: 5px; margin-top: 9px; }
+.rag-citation-badges span { color: var(--muted); font-size: 7px; }
+.rag-citation-badges b { padding: 3px 6px; border-radius: 5px; background: var(--green); color: white; font-size: 7px; }
+.rag-context-metrics { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); margin-top: 11px; overflow: hidden; border: 1px solid #e0e7e1; border-radius: 9px; }
+.rag-context-metrics span { display: flex; flex-direction: column; gap: 2px; padding: 8px 9px; border-right: 1px solid #e6ebe7; background: #fafcfa; }
+.rag-context-metrics span:last-child { border-right: 0; }
+.rag-context-metrics small { color: var(--muted); font-size: 7px; }
+.rag-context-metrics strong { color: var(--green); font-size: 12px; }
+.rag-uncertainties { margin-top: 9px; padding: 9px 10px; border-radius: 8px; background: #fff9ed; color: #765f31; }
+.rag-uncertainties strong { font-size: 8px; }
+.rag-uncertainties p { margin: 4px 0 0; font-size: 7px; line-height: 1.55; }
+.rag-evidence-list { display: flex; flex-direction: column; gap: 7px; margin-top: 10px; }
+.rag-evidence-list article { padding: 11px; border: 1px solid #dfe6e0; border-radius: 9px; background: #fbfcfb; }
+.rag-evidence-list article.cited { border-color: #8eb49a; box-shadow: inset 3px 0 0 #6b9e7a; }
+.rag-evidence-heading { display: flex; align-items: center; gap: 8px; }
+.rag-evidence-heading > span { width: 27px; height: 27px; flex: 0 0 auto; display: grid; place-items: center; border-radius: 7px; background: #e2eee4; color: var(--green); font-size: 8px; font-weight: 900; }
+.rag-evidence-heading > div { min-width: 0; display: flex; flex: 1; flex-direction: column; gap: 2px; }
+.rag-evidence-heading strong { overflow: hidden; font-size: 9px; text-overflow: ellipsis; white-space: nowrap; }
+.rag-evidence-heading small { color: var(--muted); font-size: 7px; }
+.rag-evidence-heading > b, .rag-evidence-heading > em { padding: 3px 5px; border-radius: 5px; font-size: 6px; font-style: normal; white-space: nowrap; }
+.rag-evidence-heading > b { background: #dfeee3; color: var(--green); }
+.rag-evidence-heading > em { background: #fde8df; color: #97513f; }
+.rag-evidence-content { margin: 8px 0 0; color: #4b5950; font-size: 8px; line-height: 1.7; white-space: pre-wrap; overflow-wrap: anywhere; }
+.rag-evidence-list footer { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-top: 8px; padding-top: 7px; border-top: 1px dashed #e0e5e1; }
+.rag-evidence-list footer small { color: var(--muted); font-size: 6px; }
+.rag-evidence-list footer button { padding: 2px 0; border: 0; background: transparent; color: var(--green); cursor: pointer; font-size: 7px; font-weight: 800; }
+.rag-generation-meta { margin: 10px 0 0; color: var(--muted); font-size: 7px; text-align: right; }
 .retrieval-privacy-note { margin: 13px 0 0; color: #728077; font-size: 7px; line-height: 1.6; }
 
 html.training-tips-off .task-tip,
@@ -1691,6 +1742,18 @@ html.motion-off *, html.motion-off *::before, html.motion-off *::after {
   .retrieval-result-heading > div { align-items: flex-start; flex-direction: column; }
   .retrieval-result-heading > small { text-align: left; }
   .retrieval-score-breakdown button { width: 100%; margin-left: 0; text-align: left; }
+  .rag-answer-heading { flex-direction: column; }
+  .rag-provider-badge { align-self: flex-start; }
+  .rag-answer-actions { align-items: stretch; flex-direction: column; }
+  .rag-answer-actions .button { width: 100%; }
+  .rag-output-heading { align-items: flex-start; flex-direction: column; }
+  .rag-output-heading > div { align-items: flex-start; flex-direction: column; }
+  .rag-output-heading > small { text-align: left; }
+  .rag-context-metrics { grid-template-columns: 1fr 1fr; }
+  .rag-context-metrics span:nth-child(2) { border-right: 0; }
+  .rag-context-metrics span:nth-child(-n+2) { border-bottom: 1px solid #e6ebe7; }
+  .rag-evidence-heading { align-items: flex-start; flex-wrap: wrap; }
+  .rag-evidence-heading > div { min-width: calc(100% - 35px); }
 }
 
 @media (prefers-reduced-motion: reduce) {

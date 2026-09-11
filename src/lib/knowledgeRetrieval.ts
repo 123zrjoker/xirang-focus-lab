@@ -12,6 +12,15 @@ export interface RetrievalHealth {
     available: boolean
     checksum: string | null
   }
+  generation?: {
+    provider: string
+    available: boolean
+    configured: boolean
+    model: string | null
+    endpointHost?: string | null
+    responseFormat?: string
+    credentialPresent?: boolean
+  }
 }
 
 export type RetrievalMode = 'keyword' | 'vector' | 'hybrid' | 'hybrid_rerank'
@@ -82,6 +91,51 @@ export interface KnowledgeRetrievalResponse {
     sourceCount: number
     averageChunkLength: number
   }
+  warnings: string[]
+}
+
+export interface RagEvidence {
+  referenceId: string
+  chunkId: string
+  sourceId: string
+  sourceTitle: string
+  heading: string
+  content: string
+  startLine: number
+  endLine: number
+  startOffset: number
+  endOffset: number
+  retrievalScore: number
+  truncated: boolean
+  instructionFlagged: boolean
+}
+
+export interface RagAnswerResponse {
+  status: 'context_only' | 'answered' | 'refused'
+  query: string
+  answer: string | null
+  citationIds: string[]
+  uncertainties: string[]
+  evidence: RagEvidence[]
+  provider: string | null
+  model: string | null
+  retrieval: {
+    engine: string
+    mode: 'hybrid' | 'hybrid_rerank'
+    confidence: 'strong' | 'possible' | 'none'
+    durationMs: number
+  }
+  context: {
+    evidenceCount: number
+    usedCharacters: number
+    omittedCount: number
+    flaggedReferenceIds: string[]
+  }
+  generation: {
+    durationMs: number
+    inputTokens: number | null
+    outputTokens: number | null
+  } | null
   warnings: string[]
 }
 
@@ -191,6 +245,34 @@ export async function searchKnowledge(
   const payload = await response.json() as KnowledgeRetrievalResponse
   if (!payload || !Array.isArray(payload.results) || !Array.isArray(payload.queryTerms)) {
     throw new Error('检索服务返回了无法识别的数据。')
+  }
+  return payload
+}
+
+export async function answerKnowledgeQuestion(
+  query: string,
+  corpusFingerprint: string,
+  previewOnly: boolean,
+  retrievalMode: 'hybrid' | 'hybrid_rerank' = 'hybrid_rerank',
+): Promise<RagAnswerResponse> {
+  const normalizedQuery = query.trim()
+  if (!normalizedQuery) throw new Error('请先输入要回答的问题。')
+  if (!corpusFingerprint) throw new Error('请先同步本地向量索引。')
+  const response = await request('/api/rag/answer', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      query: normalizedQuery,
+      corpusFingerprint,
+      retrievalMode,
+      topK: 6,
+      previewOnly,
+    }),
+  }, 90_000)
+  if (!response.ok) throw new Error(await responseError(response))
+  const payload = await response.json() as RagAnswerResponse
+  if (!payload || !Array.isArray(payload.evidence) || !Array.isArray(payload.citationIds)) {
+    throw new Error('RAG 服务返回了无法识别的数据。')
   }
   return payload
 }

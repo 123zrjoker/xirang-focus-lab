@@ -299,7 +299,7 @@ export function KnowledgeBaseManager({ notes, refreshKey = 0 }: KnowledgeBaseMan
           <span>03</span>
           <div><p className="eyebrow">AI 与知识库</p><h2>个人知识来源</h2></div>
         </div>
-        <span className="knowledge-offline-badge"><i />本地检索 · AI 未接入</span>
+        <span className="knowledge-offline-badge"><i />本地 RAG · 平台待配置</span>
       </div>
 
       <p className="knowledge-intro">只处理你主动选择的笔记和文档。TXT、Markdown、Word DOCX 与文字型 PDF 会提取正文并切成可追溯文本块；内容哈希未变化的资料不会重复处理。</p>
@@ -381,7 +381,7 @@ export function KnowledgeBaseManager({ notes, refreshKey = 0 }: KnowledgeBaseMan
         ))}</div> : <div className="knowledge-import-empty"><span>DOC</span><div><strong>还没有导入文档</strong><p>支持纯文本、Markdown、Word DOCX 和文字型 PDF；提取正文只保存在本机。</p></div><button type="button" disabled={!available || importing} onClick={() => importInput.current?.click()}>选择第一份资料</button></div>}
       </section>
 
-      <div className="knowledge-boundary"><span aria-hidden="true">◉</span><p><strong>当前边界</strong>已建立可解释的中文关键词检索基线；向量检索、重排和 AI 尚未接入。文字型 PDF 可直接提取，扫描 PDF 暂不进行 OCR。“应用数据 JSON”暂不包含知识库文档与文本块。</p></div>
+      <div className="knowledge-boundary"><span aria-hidden="true">◉</span><p><strong>当前边界</strong>BM25、BGE 向量、RRF 融合、Cross-Encoder 重排和引用式 RAG 上下文预览已接通；真实回答需后续配置 AI 平台。文字型 PDF 可直接提取，扫描 PDF 暂不进行 OCR。“应用数据 JSON”暂不包含知识库文档与文本块。</p></div>
 
       {viewedSource && (
         <div className="knowledge-preview-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) setViewSourceId(null) }}>

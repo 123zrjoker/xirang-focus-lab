@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { checkRetrievalService, searchKnowledge, syncKnowledgeIndex } from '../src/lib/knowledgeRetrieval'
+import { answerKnowledgeQuestion, checkRetrievalService, searchKnowledge, syncKnowledgeIndex } from '../src/lib/knowledgeRetrieval'
 import type { KnowledgeChunk } from '../src/lib/knowledgeBase'
 
 const chunk: KnowledgeChunk = {
@@ -84,5 +84,31 @@ describe('knowledge retrieval client', () => {
     })))
 
     await expect(searchKnowledge('开始任务', [chunk])).rejects.toThrow('查询失败。')
+  })
+
+  it('previews the exact grounded context without requiring an AI key', async () => {
+    const payload = {
+      status: 'context_only', query: '如何开始', answer: null, citationIds: [], uncertainties: [],
+      provider: null, model: null, generation: null, warnings: [],
+      retrieval: { engine: 'hybrid', mode: 'hybrid_rerank', confidence: 'strong', durationMs: 20 },
+      context: { evidenceCount: 1, usedCharacters: 15, omittedCount: 0, flaggedReferenceIds: [] },
+      evidence: [{
+        referenceId: 'S1', chunkId: chunk.id, sourceId: chunk.sourceId, sourceTitle: chunk.sourceTitle,
+        heading: chunk.heading, content: chunk.content, startLine: 3, endLine: 3,
+        startOffset: 0, endOffset: 15, retrievalScore: 0.9, truncated: false, instructionFlagged: false,
+      }],
+    }
+    const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify(payload), {
+      status: 200, headers: { 'Content-Type': 'application/json' },
+    }))
+    vi.stubGlobal('fetch', fetchMock)
+
+    await expect(answerKnowledgeQuestion('  如何开始  ', 'a'.repeat(64), true)).resolves.toMatchObject({
+      status: 'context_only', context: { evidenceCount: 1 },
+    })
+    const [, options] = fetchMock.mock.calls[0]
+    expect(JSON.parse(options.body)).toEqual({
+      query: '如何开始', corpusFingerprint: 'a'.repeat(64), retrievalMode: 'hybrid_rerank', topK: 6, previewOnly: true,
+    })
   })
 })

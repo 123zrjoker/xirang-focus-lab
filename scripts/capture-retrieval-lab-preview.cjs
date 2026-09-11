@@ -123,27 +123,42 @@ app.whenReady().then(async () => {
     throw new Error('检索耗时或本地检索记录没有正确显示')
   }
 
+  currentStep = '预览引用式 RAG 上下文'
+  await window.webContents.executeJavaScript("document.querySelector('.rag-answer-actions .button.secondary').click()")
+  await waitFor(window, "document.querySelector('.rag-output')?.textContent.includes('尚未调用 AI')", 'RAG 上下文预览', 30000)
+  const ragResult = await window.webContents.executeJavaScript(`(() => ({
+    output: document.querySelector('.rag-output')?.innerText || '',
+    provider: document.querySelector('.rag-provider-badge')?.innerText || '',
+    generationDisabled: document.querySelectorAll('.rag-answer-actions button')[1]?.disabled,
+  }))()`)
+  if (!ragResult.output.includes('S1') || !ragResult.output.includes('减少手机分心') || !ragResult.output.includes('上下文字符')) {
+    throw new Error(`RAG 上下文或引用标识不正确：${ragResult.output}`)
+  }
+  if (!ragResult.provider.includes('等待 AI 平台配置') || ragResult.generationDisabled !== true) {
+    throw new Error('未配置平台时的生成禁用状态不正确')
+  }
+
   currentStep = '检查桌面端布局'
-  await window.webContents.executeJavaScript("document.documentElement.style.scrollBehavior = 'auto'; window.scrollTo(0, document.querySelector('.knowledge-retrieval-lab').offsetTop - 100)")
+  await window.webContents.executeJavaScript("document.documentElement.style.scrollBehavior = 'auto'; window.scrollTo(0, document.querySelector('.rag-answer-lab').getBoundingClientRect().top + window.scrollY - 120)")
   await pause(300)
   if (await window.webContents.executeJavaScript('document.documentElement.scrollWidth > document.documentElement.clientWidth')) {
     throw new Error('桌面端检索实验台出现横向溢出')
   }
-  await capture(window, '0.4.3-hybrid-retrieval-desktop.png')
+  await capture(window, '0.4.4-rag-context-desktop.png')
 
   currentStep = '检查移动端布局'
   window.setSize(430, 900)
   await pause(350)
-  await window.webContents.executeJavaScript("window.scrollTo(0, document.querySelector('.knowledge-retrieval-lab').offsetTop - 72)")
+  await window.webContents.executeJavaScript("window.scrollTo(0, document.querySelector('.rag-answer-lab').getBoundingClientRect().top + window.scrollY - 72)")
   await pause(300)
   if (await window.webContents.executeJavaScript('document.documentElement.scrollWidth > document.documentElement.clientWidth')) {
     throw new Error('移动端检索实验台出现横向溢出')
   }
-  await capture(window, '0.4.3-hybrid-retrieval-mobile.png')
+  await capture(window, '0.4.4-rag-context-mobile.png')
 
   currentStep = '清理验收向量索引'
   await window.webContents.executeJavaScript("fetch('/api/index', { method: 'DELETE' }).then((response) => { if (!response.ok) throw new Error('清理失败') })")
-  console.log('0.4.3 混合检索实验台端到端验收通过')
+  console.log('0.4.4 引用式 RAG 上下文端到端验收通过')
   await window.close()
   app.quit()
 }).catch((error) => {

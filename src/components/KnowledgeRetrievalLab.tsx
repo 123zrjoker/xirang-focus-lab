@@ -1,10 +1,12 @@
 import { useEffect, useState, type FormEvent } from 'react'
 import {
+  answerKnowledgeQuestion,
   checkRetrievalService,
   clearKnowledgeIndex,
   searchKnowledge,
   syncKnowledgeIndex,
   type KnowledgeRetrievalResponse,
+  type RagAnswerResponse,
   type RetrievalHealth,
   type RetrievalIndexStatus,
   type RetrievalMode,
@@ -53,6 +55,10 @@ export function KnowledgeRetrievalLab({ chunks, onStored }: KnowledgeRetrievalLa
   const [expandedChunkId, setExpandedChunkId] = useState<string | null>(null)
   const [indexStatus, setIndexStatus] = useState<RetrievalIndexStatus | null>(null)
   const [indexing, setIndexing] = useState(false)
+  const [ragResponse, setRagResponse] = useState<RagAnswerResponse | null>(null)
+  const [ragBusy, setRagBusy] = useState<'preview' | 'generate' | null>(null)
+  const [ragError, setRagError] = useState<string | null>(null)
+  const [expandedEvidence, setExpandedEvidence] = useState<string | null>(null)
 
   async function detectService() {
     setServiceState('checking')
@@ -76,6 +82,7 @@ export function KnowledgeRetrievalLab({ chunks, onStored }: KnowledgeRetrievalLa
   async function buildIndex() {
     setIndexing(true)
     setError(null)
+    setRagResponse(null)
     try {
       const result = await syncKnowledgeIndex(chunks)
       setIndexStatus(result)
@@ -95,6 +102,7 @@ export function KnowledgeRetrievalLab({ chunks, onStored }: KnowledgeRetrievalLa
       setIndexStatus(result)
       setMode('keyword')
       setResponse(null)
+      setRagResponse(null)
     } catch (nextError) {
       setError(nextError instanceof Error ? nextError.message : '向量索引清除失败。')
     } finally {
@@ -134,15 +142,30 @@ export function KnowledgeRetrievalLab({ chunks, onStored }: KnowledgeRetrievalLa
     }
   }
 
+  async function runRag(previewOnly: boolean) {
+    setRagBusy(previewOnly ? 'preview' : 'generate')
+    setRagError(null)
+    setExpandedEvidence(null)
+    try {
+      if (!indexStatus?.ready || !indexStatus.fingerprint) throw new Error('请先明确构建本地向量索引。')
+      const result = await answerKnowledgeQuestion(query, indexStatus.fingerprint, previewOnly)
+      setRagResponse(result)
+    } catch (nextError) {
+      setRagError(nextError instanceof Error ? nextError.message : '引用式 RAG 请求失败。')
+    } finally {
+      setRagBusy(null)
+    }
+  }
+
   return (
     <section className="knowledge-retrieval-lab" aria-labelledby="retrieval-lab-title">
       <div className="retrieval-lab-heading">
         <div className="retrieval-lab-title">
           <span aria-hidden="true">R</span>
           <div>
-            <p className="eyebrow">0.4.3 · Hybrid Retrieval & Reranking</p>
+            <p className="eyebrow">0.4.4 · Grounded RAG Pipeline</p>
             <h3 id="retrieval-lab-title">检索实验台</h3>
-            <p>四种模式同台对照，并展开查看召回、融合与重排轨迹。</p>
+            <p>对照四种检索模式，并把命中的证据组装为可审计、可引用的问答上下文。</p>
           </div>
         </div>
         <button
@@ -187,7 +210,11 @@ export function KnowledgeRetrievalLab({ chunks, onStored }: KnowledgeRetrievalLa
           <input
             value={query}
             maxLength={500}
-            onChange={(event) => setQuery(event.target.value)}
+            onChange={(event) => {
+              setQuery(event.target.value)
+              setRagResponse(null)
+              setRagError(null)
+            }}
             placeholder="例如：我该如何更容易开始一个任务？"
           />
         </label>
@@ -216,7 +243,11 @@ export function KnowledgeRetrievalLab({ chunks, onStored }: KnowledgeRetrievalLa
       {!query && (
         <div className="retrieval-examples" aria-label="检索示例">
           <span>试试：</span>
-          {exampleQueries.map((example) => <button type="button" key={example} onClick={() => setQuery(example)}>{example}</button>)}
+          {exampleQueries.map((example) => <button type="button" key={example} onClick={() => {
+            setQuery(example)
+            setRagResponse(null)
+            setRagError(null)
+          }}>{example}</button>)}
         </div>
       )}
 
@@ -283,7 +314,109 @@ export function KnowledgeRetrievalLab({ chunks, onStored }: KnowledgeRetrievalLa
         </div>
       )}
 
-      <p className="retrieval-privacy-note">BM25 为无状态请求；只有明确点击构建后，授权文本和 512 维向量才写入本机 Qdrant。混合模式用 RRF 合并两路排名，重排模式再以本机多语言 Cross-Encoder 处理前 12 条候选；模型缺失时会透明降级，不调用云端模型。</p>
+      <section className="rag-answer-lab" aria-labelledby="rag-answer-title">
+        <div className="rag-answer-heading">
+          <div>
+            <p className="eyebrow">CITED ANSWER · MINIMUM CONTEXT</p>
+            <h4 id="rag-answer-title">引用式 RAG 问答</h4>
+            <p>先预览即将发送的证据，再决定是否调用 AI；不会上传整个知识库。</p>
+          </div>
+          <span className={`rag-provider-badge ${health?.generation?.available ? 'ready' : ''}`}>
+            <i />
+            {health?.generation?.available
+              ? `${health.generation.model ?? health.generation.provider} 已配置`
+              : '等待 AI 平台配置'}
+          </span>
+        </div>
+
+        <div className="rag-answer-actions">
+          <button
+            className="button secondary"
+            type="button"
+            disabled={Boolean(ragBusy) || serviceState !== 'ready' || !query.trim() || !indexStatus?.ready}
+            onClick={() => void runRag(true)}
+          >
+            {ragBusy === 'preview' ? '正在整理证据…' : '预览 AI 上下文'}
+          </button>
+          <button
+            className="button primary"
+            type="button"
+            disabled={Boolean(ragBusy) || serviceState !== 'ready' || !query.trim() || !indexStatus?.ready || !health?.generation?.available}
+            onClick={() => void runRag(false)}
+          >
+            {ragBusy === 'generate' ? '正在生成回答…' : '生成引用回答'}
+          </button>
+        </div>
+
+        {!health?.generation?.available && (
+          <p className="rag-platform-note">平台无关的调用契约已就绪。后续提供 AI 平台地址、鉴权方式和模型名后即可启用生成；Key 只放在本地后端环境变量中。</p>
+        )}
+        {ragError && <div className="rag-error" role="alert"><span>!</span><p>{ragError}</p></div>}
+
+        {ragResponse && (
+          <div className="rag-output" aria-live="polite">
+            <div className="rag-output-heading">
+              <div>
+                <span className={`rag-status ${ragResponse.status}`}>
+                  {ragResponse.status === 'context_only' ? '尚未调用 AI' : ragResponse.status === 'answered' ? '引用回答' : '证据不足 · 已拒答'}
+                </span>
+                <strong>{ragResponse.status === 'context_only' ? '将发送以下最小证据上下文' : '基于本地证据的回答'}</strong>
+              </div>
+              <small>{modeLabel(ragResponse.retrieval.mode)} · {ragResponse.retrieval.durationMs.toFixed(1)} ms</small>
+            </div>
+
+            {ragResponse.answer && <p className="rag-answer-copy">{ragResponse.answer}</p>}
+            {ragResponse.citationIds.length > 0 && (
+              <div className="rag-citation-badges" aria-label="回答引用">
+                <span>回答引用</span>
+                {ragResponse.citationIds.map((referenceId) => <b key={referenceId}>[{referenceId}]</b>)}
+              </div>
+            )}
+            <div className="rag-context-metrics">
+              <span><small>证据片段</small><strong>{ragResponse.context.evidenceCount}</strong></span>
+              <span><small>上下文字符</small><strong>{ragResponse.context.usedCharacters}</strong></span>
+              <span><small>省略候选</small><strong>{ragResponse.context.omittedCount}</strong></span>
+              <span><small>疑似指令</small><strong>{ragResponse.context.flaggedReferenceIds.length}</strong></span>
+            </div>
+
+            {ragResponse.warnings.map((warning) => <p className="retrieval-warning" key={warning}>{warning}</p>)}
+            {ragResponse.uncertainties.length > 0 && (
+              <div className="rag-uncertainties"><strong>不确定项</strong>{ragResponse.uncertainties.map((item) => <p key={item}>{item}</p>)}</div>
+            )}
+
+            <div className="rag-evidence-list">
+              {ragResponse.evidence.map((evidence) => {
+                const expanded = expandedEvidence === evidence.referenceId
+                const cited = ragResponse.citationIds.includes(evidence.referenceId)
+                return (
+                  <article className={cited ? 'cited' : ''} key={evidence.referenceId}>
+                    <div className="rag-evidence-heading">
+                      <span>{evidence.referenceId}</span>
+                      <div><strong>{evidence.sourceTitle}</strong><small>{evidence.heading} · 第 {evidence.startLine}{evidence.endLine === evidence.startLine ? '' : `～${evidence.endLine}`} 行</small></div>
+                      {cited && <b>已引用</b>}
+                      {evidence.instructionFlagged && <em>疑似指令</em>}
+                    </div>
+                    <p className="rag-evidence-content">{expanded ? evidence.content : `${evidence.content.slice(0, 260)}${evidence.content.length > 260 ? '…' : ''}`}</p>
+                    <footer>
+                      <small>检索分数 {evidence.retrievalScore.toFixed(3)}{evidence.truncated ? ' · 已按预算截断' : ''}</small>
+                      {evidence.content.length > 260 && <button type="button" onClick={() => setExpandedEvidence(expanded ? null : evidence.referenceId)}>{expanded ? '收起' : '展开证据'}</button>}
+                    </footer>
+                  </article>
+                )
+              })}
+            </div>
+            {ragResponse.generation && (
+              <p className="rag-generation-meta">
+                {ragResponse.provider} · {ragResponse.model} · {ragResponse.generation.durationMs.toFixed(1)} ms
+                {ragResponse.generation.inputTokens != null ? ` · 输入 ${ragResponse.generation.inputTokens} tokens` : ''}
+                {ragResponse.generation.outputTokens != null ? ` · 输出 ${ragResponse.generation.outputTokens} tokens` : ''}
+              </p>
+            )}
+          </div>
+        )}
+      </section>
+
+      <p className="retrieval-privacy-note">检索、向量与重排均在本机执行；只有明确点击“生成引用回答”后，当前问题和上方可预览的最小证据才会发送给已配置的 AI 平台。API Key 仅由本地后端读取，不写入浏览器、本地知识库或导出数据。</p>
     </section>
   )
 }
