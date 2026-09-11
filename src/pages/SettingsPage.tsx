@@ -1,5 +1,6 @@
 import { useRef, useState, type ChangeEvent, type ReactNode } from 'react'
 import { KnowledgeBaseManager } from '../components/KnowledgeBaseManager'
+import { AIProviderSettings } from '../components/AIProviderSettings'
 import {
   createBackupText,
   createCsvText,
@@ -253,6 +254,8 @@ export function SettingsPage({
               />
             </div>
           </section>
+
+          <AIProviderSettings onChanged={() => setKnowledgeRefreshKey((current) => current + 1)} />
 
           <KnowledgeBaseManager notes={state.personalNotes} refreshKey={knowledgeRefreshKey} />
         </div>

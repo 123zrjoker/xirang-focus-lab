@@ -20,7 +20,21 @@ export interface RetrievalHealth {
     endpointHost?: string | null
     responseFormat?: string
     credentialPresent?: boolean
+    credentialSource?: string
+    persistentStorageSupported?: boolean
+    credentialStorageError?: boolean
   }
+}
+
+export interface DeepSeekCredentialStatus {
+  provider: 'deepseek'
+  configured: boolean
+  available: boolean
+  model: string | null
+  credentialSource: string
+  persistentStorageSupported: boolean
+  credentialStorageError: boolean
+  storageDescription: string
 }
 
 export type RetrievalMode = 'keyword' | 'vector' | 'hybrid' | 'hybrid_rerank'
@@ -135,6 +149,8 @@ export interface RagAnswerResponse {
     durationMs: number
     inputTokens: number | null
     outputTokens: number | null
+    cacheHitInputTokens?: number | null
+    cacheMissInputTokens?: number | null
   } | null
   warnings: string[]
 }
@@ -193,6 +209,30 @@ export async function checkRetrievalService(): Promise<RetrievalHealth> {
   const payload = await response.json() as RetrievalHealth
   if (payload.status !== 'ok' || !payload.retrievalEngine) throw new Error('检索服务状态信息不完整。')
   return payload
+}
+
+export async function getDeepSeekCredentialStatus(): Promise<DeepSeekCredentialStatus> {
+  const response = await request('/api/settings/ai-provider/deepseek/credential', undefined, 5_000)
+  if (!response.ok) throw new Error(await responseError(response))
+  return response.json() as Promise<DeepSeekCredentialStatus>
+}
+
+export async function saveDeepSeekCredential(apiKey: string): Promise<DeepSeekCredentialStatus> {
+  const response = await request('/api/settings/ai-provider/deepseek/credential', {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ apiKey }),
+  }, 10_000)
+  if (!response.ok) throw new Error(await responseError(response))
+  return response.json() as Promise<DeepSeekCredentialStatus>
+}
+
+export async function deleteDeepSeekCredential(): Promise<DeepSeekCredentialStatus> {
+  const response = await request('/api/settings/ai-provider/deepseek/credential', {
+    method: 'DELETE',
+  }, 10_000)
+  if (!response.ok) throw new Error(await responseError(response))
+  return response.json() as Promise<DeepSeekCredentialStatus>
 }
 
 export async function getKnowledgeIndexStatus(): Promise<RetrievalIndexStatus> {

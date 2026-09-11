@@ -1,5 +1,13 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { answerKnowledgeQuestion, checkRetrievalService, searchKnowledge, syncKnowledgeIndex } from '../src/lib/knowledgeRetrieval'
+import {
+  answerKnowledgeQuestion,
+  checkRetrievalService,
+  deleteDeepSeekCredential,
+  getDeepSeekCredentialStatus,
+  saveDeepSeekCredential,
+  searchKnowledge,
+  syncKnowledgeIndex,
+} from '../src/lib/knowledgeRetrieval'
 import type { KnowledgeChunk } from '../src/lib/knowledgeBase'
 
 const chunk: KnowledgeChunk = {
@@ -110,5 +118,27 @@ describe('knowledge retrieval client', () => {
     expect(JSON.parse(options.body)).toEqual({
       query: '如何开始', corpusFingerprint: 'a'.repeat(64), retrievalMode: 'hybrid_rerank', topK: 6, previewOnly: true,
     })
+  })
+
+  it('manages the DeepSeek credential through the local backend without a read-back field', async () => {
+    const status = {
+      provider: 'deepseek', configured: true, available: true, model: 'deepseek-v4-flash',
+      credentialSource: 'windows_dpapi_current_user', persistentStorageSupported: true,
+      credentialStorageError: false, storageDescription: 'Windows DPAPI',
+    }
+    const fetchMock = vi.fn().mockImplementation(async () => new Response(JSON.stringify(status), {
+      status: 200, headers: { 'Content-Type': 'application/json' },
+    }))
+    vi.stubGlobal('fetch', fetchMock)
+
+    await expect(getDeepSeekCredentialStatus()).resolves.toMatchObject({ configured: true })
+    await expect(saveDeepSeekCredential('credential-client-test-value')).resolves.toMatchObject({ available: true })
+    await expect(deleteDeepSeekCredential()).resolves.toMatchObject({ configured: true })
+
+    expect(fetchMock.mock.calls[0][0]).toBe('/api/settings/ai-provider/deepseek/credential')
+    expect(fetchMock.mock.calls[1][1]).toMatchObject({ method: 'PUT' })
+    expect(JSON.parse(fetchMock.mock.calls[1][1].body)).toEqual({ apiKey: 'credential-client-test-value' })
+    expect(fetchMock.mock.calls[2][1]).toMatchObject({ method: 'DELETE' })
+    expect(JSON.stringify(status)).not.toContain('credential-client-test-value')
   })
 })

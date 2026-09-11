@@ -16,6 +16,7 @@ import { saveKnowledgeRetrieval, type KnowledgeChunk } from '../lib/knowledgeBas
 interface KnowledgeRetrievalLabProps {
   chunks: KnowledgeChunk[]
   onStored?: () => void | Promise<void>
+  refreshKey?: number
 }
 
 type ServiceState = 'checking' | 'ready' | 'offline'
@@ -43,7 +44,7 @@ function lineLabel(result: KnowledgeRetrievalResponse['results'][number]) {
   return `第 ${result.startLine}${result.endLine === result.startLine ? '' : `～${result.endLine}`} 行 · 字符 ${result.startOffset}～${result.endOffset}`
 }
 
-export function KnowledgeRetrievalLab({ chunks, onStored }: KnowledgeRetrievalLabProps) {
+export function KnowledgeRetrievalLab({ chunks, onStored, refreshKey = 0 }: KnowledgeRetrievalLabProps) {
   const [query, setQuery] = useState('')
   const [topK, setTopK] = useState(5)
   const [mode, setMode] = useState<RetrievalMode>('keyword')
@@ -77,7 +78,7 @@ export function KnowledgeRetrievalLab({ chunks, onStored }: KnowledgeRetrievalLa
 
   useEffect(() => {
     void detectService()
-  }, [])
+  }, [refreshKey])
 
   async function buildIndex() {
     setIndexing(true)
@@ -349,7 +350,7 @@ export function KnowledgeRetrievalLab({ chunks, onStored }: KnowledgeRetrievalLa
         </div>
 
         {!health?.generation?.available && (
-          <p className="rag-platform-note">DeepSeek 调用契约已就绪。运行 npm run dev:api:deepseek 并在终端隐藏输入 Key 后即可启用生成；Key 只存在于本地后端进程环境中。</p>
+          <p className="rag-platform-note">DeepSeek 调用契约已就绪。请先在设置页上方加密保存 Key；保存后无需在每次启动时重复输入。</p>
         )}
         {ragError && <div className="rag-error" role="alert"><span>!</span><p>{ragError}</p></div>}
 

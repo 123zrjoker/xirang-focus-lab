@@ -11,6 +11,7 @@ from urllib.parse import urljoin, urlparse
 import httpx
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
+from .credentials import CredentialStorageError, deepseek_credential_store
 from .retrieval import RankedChunk
 
 
@@ -78,6 +79,8 @@ class ProviderGeneration:
     duration_ms: float
     input_tokens: Optional[int] = None
     output_tokens: Optional[int] = None
+    cache_hit_input_tokens: Optional[int] = None
+    cache_miss_input_tokens: Optional[int] = None
 
 
 class AIProvider(Protocol):
@@ -380,6 +383,8 @@ class CompatibleChatProvider:
             duration_ms=round((time.perf_counter() - started) * 1_000, 3),
             input_tokens=usage.get("prompt_tokens") if isinstance(usage, dict) else None,
             output_tokens=usage.get("completion_tokens") if isinstance(usage, dict) else None,
+            cache_hit_input_tokens=usage.get("prompt_cache_hit_tokens") if isinstance(usage, dict) else None,
+            cache_miss_input_tokens=usage.get("prompt_cache_miss_tokens") if isinstance(usage, dict) else None,
         )
 
 
@@ -396,10 +401,27 @@ class DeepSeekChatProvider(CompatibleChatProvider):
         base_url: Optional[str] = None,
         timeout_seconds: Optional[float] = None,
         max_tokens: Optional[int] = None,
+        credential_source: Optional[str] = None,
     ) -> None:
-        resolved_key = api_key if api_key is not None else (
-            os.environ.get("DEEPSEEK_API_KEY") or os.environ.get("XIRANG_AI_API_KEY", "")
-        )
+        storage_error = False
+        if api_key is not None:
+            resolved_key = api_key
+            resolved_credential_source = credential_source or ("explicit" if api_key.strip() else "none")
+        else:
+            environment_key = os.environ.get("DEEPSEEK_API_KEY") or os.environ.get("XIRANG_AI_API_KEY", "")
+            if environment_key.strip():
+                resolved_key = environment_key
+                resolved_credential_source = "environment"
+            else:
+                try:
+                    resolved_key = deepseek_credential_store.load() or ""
+                    resolved_credential_source = (
+                        deepseek_credential_store.storage_kind if resolved_key else "none"
+                    )
+                except CredentialStorageError:
+                    resolved_key = ""
+                    resolved_credential_source = "storage_error"
+                    storage_error = True
         resolved_model = model if model is not None else (
             os.environ.get("DEEPSEEK_MODEL") or os.environ.get("XIRANG_AI_MODEL") or "deepseek-v4-flash"
         )
@@ -423,10 +445,15 @@ class DeepSeekChatProvider(CompatibleChatProvider):
             timeout_seconds=float(resolved_timeout) if resolved_timeout else DEFAULT_GENERATION_TIMEOUT_SECONDS,
             max_tokens=int(resolved_max_tokens),
         )
+        self.credential_source = resolved_credential_source
+        self.credential_storage_error = storage_error
 
     def status(self) -> dict:
         status = super().status()
         status["configured"] = bool(self.api_key)
+        status["credentialSource"] = self.credential_source
+        status["persistentStorageSupported"] = deepseek_credential_store.supported
+        status["credentialStorageError"] = self.credential_storage_error
         return status
 
     def _request_payload(self, query: str, evidence: Sequence[ContextEvidence]) -> dict:

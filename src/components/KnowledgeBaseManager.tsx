@@ -296,7 +296,7 @@ export function KnowledgeBaseManager({ notes, refreshKey = 0 }: KnowledgeBaseMan
     <section className="settings-card knowledge-manager card-surface">
       <div className="knowledge-heading">
         <div className="settings-card-heading">
-          <span>03</span>
+          <span>04</span>
           <div><p className="eyebrow">AI 与知识库</p><h2>个人知识来源</h2></div>
         </div>
         <span className="knowledge-offline-badge"><i />本地 RAG · DeepSeek</span>
@@ -329,7 +329,7 @@ export function KnowledgeBaseManager({ notes, refreshKey = 0 }: KnowledgeBaseMan
         </div>
       </div>
 
-      <KnowledgeRetrievalLab chunks={chunks} onStored={refreshStorageState} />
+      <KnowledgeRetrievalLab chunks={chunks} onStored={refreshStorageState} refreshKey={refreshKey} />
 
       <section className="knowledge-source-section">
         <div className="knowledge-section-heading">
@@ -381,7 +381,7 @@ export function KnowledgeBaseManager({ notes, refreshKey = 0 }: KnowledgeBaseMan
         ))}</div> : <div className="knowledge-import-empty"><span>DOC</span><div><strong>还没有导入文档</strong><p>支持纯文本、Markdown、Word DOCX 和文字型 PDF；提取正文只保存在本机。</p></div><button type="button" disabled={!available || importing} onClick={() => importInput.current?.click()}>选择第一份资料</button></div>}
       </section>
 
-      <div className="knowledge-boundary"><span aria-hidden="true">◉</span><p><strong>当前边界</strong>BM25、BGE 向量、RRF 融合、Cross-Encoder 重排和引用式 RAG 上下文预览已接通；DeepSeek 适配器已完成，真实回答需在本机安全注入 Key。文字型 PDF 可直接提取，扫描 PDF 暂不进行 OCR。“应用数据 JSON”暂不包含知识库文档与文本块。</p></div>
+      <div className="knowledge-boundary"><span aria-hidden="true">◉</span><p><strong>当前边界</strong>BM25、BGE 向量、RRF 融合、Cross-Encoder 重排和引用式 RAG 已接通；DeepSeek Key 可在上方由本机后端加密保存。文字型 PDF 可直接提取，扫描 PDF 暂不进行 OCR。“应用数据 JSON”暂不包含知识库文档、文本块或 AI 凭据。</p></div>
 
       {viewedSource && (
         <div className="knowledge-preview-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) setViewSourceId(null) }}>

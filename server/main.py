@@ -4,9 +4,10 @@ from typing import Literal, Optional
 
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, SecretStr
 
 from . import __version__
+from .credentials import CredentialStorageError, deepseek_credential_store
 from .retrieval import (
     ENGINE_NAME,
     MAX_CHUNKS,
@@ -23,6 +24,7 @@ from .semantic import (
 )
 from .hybrid import RERANK_ENGINE_NAME, RRF_ENGINE_NAME, hybrid_search, reranker_provider
 from .generation import (
+    DeepSeekChatProvider,
     ProviderResponseError,
     ProviderUnavailableError,
     build_context,
@@ -183,6 +185,8 @@ class RagGenerationResponse(ApiModel):
     duration_ms: float
     input_tokens: Optional[int] = None
     output_tokens: Optional[int] = None
+    cache_hit_input_tokens: Optional[int] = None
+    cache_miss_input_tokens: Optional[int] = None
 
 
 class RagAnswerResponse(ApiModel):
@@ -200,6 +204,21 @@ class RagAnswerResponse(ApiModel):
     warnings: list[str] = Field(default_factory=list)
 
 
+class DeepSeekCredentialRequest(ApiModel):
+    api_key: SecretStr
+
+
+class DeepSeekCredentialStatusResponse(ApiModel):
+    provider: Literal["deepseek"] = "deepseek"
+    configured: bool
+    available: bool
+    model: Optional[str]
+    credential_source: str
+    persistent_storage_supported: bool
+    credential_storage_error: bool
+    storage_description: str
+
+
 app = FastAPI(
     title="Xirang Retrieval Service",
     description="Local keyword and semantic retrieval service for the Xirang knowledge base.",
@@ -208,7 +227,7 @@ app = FastAPI(
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["http://127.0.0.1:5173", "http://localhost:5173", "null"],
-    allow_methods=["GET", "POST", "DELETE"],
+    allow_methods=["GET", "POST", "PUT", "DELETE"],
     allow_headers=["Content-Type"],
 )
 
@@ -239,6 +258,73 @@ def health() -> dict:
         "generation": generation_provider.status(),
         "index": index,
     }
+
+
+def deepseek_credential_status() -> DeepSeekCredentialStatusResponse:
+    status = generation_provider.status()
+    source = str(status.get("credentialSource") or "none")
+    descriptions = {
+        "windows_dpapi_current_user": "Windows DPAPI（仅当前 Windows 用户可解密）",
+        "environment": "当前后端进程环境变量",
+        "explicit": "当前后端进程内存",
+        "storage_error": "本机加密凭据读取失败",
+        "none": "未保存",
+    }
+    return DeepSeekCredentialStatusResponse(
+        configured=bool(status.get("configured")),
+        available=bool(status.get("available")),
+        model=status.get("model"),
+        credential_source=source,
+        persistent_storage_supported=deepseek_credential_store.supported,
+        credential_storage_error=bool(status.get("credentialStorageError")),
+        storage_description=descriptions.get(source, "本机安全存储"),
+    )
+
+
+@app.get(
+    "/api/settings/ai-provider/deepseek/credential",
+    response_model=DeepSeekCredentialStatusResponse,
+)
+def get_deepseek_credential() -> DeepSeekCredentialStatusResponse:
+    return deepseek_credential_status()
+
+
+@app.put(
+    "/api/settings/ai-provider/deepseek/credential",
+    response_model=DeepSeekCredentialStatusResponse,
+)
+def save_deepseek_credential(request: DeepSeekCredentialRequest) -> DeepSeekCredentialStatusResponse:
+    global generation_provider
+    api_key = request.api_key.get_secret_value().strip()
+    if not 16 <= len(api_key) <= 512:
+        raise HTTPException(status_code=422, detail="DeepSeek API Key 长度无效，请输入完整 Key。")
+    if any(character.isspace() or ord(character) < 32 for character in api_key):
+        raise HTTPException(status_code=422, detail="DeepSeek API Key 不能包含空格、换行或控制字符。")
+    if not deepseek_credential_store.supported:
+        raise HTTPException(status_code=501, detail="当前系统不支持安全持久化，请改用后端环境变量。")
+    try:
+        deepseek_credential_store.save(api_key)
+    except CredentialStorageError as error:
+        raise HTTPException(status_code=500, detail=str(error)) from error
+    generation_provider = DeepSeekChatProvider(
+        api_key=api_key,
+        credential_source=deepseek_credential_store.storage_kind,
+    )
+    return deepseek_credential_status()
+
+
+@app.delete(
+    "/api/settings/ai-provider/deepseek/credential",
+    response_model=DeepSeekCredentialStatusResponse,
+)
+def delete_deepseek_credential() -> DeepSeekCredentialStatusResponse:
+    global generation_provider
+    try:
+        deepseek_credential_store.delete()
+    except CredentialStorageError as error:
+        raise HTTPException(status_code=500, detail=str(error)) from error
+    generation_provider = DeepSeekChatProvider(api_key="", credential_source="none")
+    return deepseek_credential_status()
 
 
 def request_chunks(items: list[ChunkInput]) -> list[RetrievalChunk]:
@@ -482,6 +568,8 @@ def answer_with_rag(request: RagAnswerRequest) -> RagAnswerResponse:
             duration_ms=generated.duration_ms,
             input_tokens=generated.input_tokens,
             output_tokens=generated.output_tokens,
+            cache_hit_input_tokens=generated.cache_hit_input_tokens,
+            cache_miss_input_tokens=generated.cache_miss_input_tokens,
         ),
         warnings=warnings,
     )

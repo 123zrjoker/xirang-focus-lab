@@ -1,6 +1,6 @@
 # 息壤 · 注意力训练与专注启动实验室
 
-0.4.4 在本地混合检索之上增加平台无关的引用式 RAG 管线：固定上下文预算，为每条证据分配 `S1`～`S8` 可追溯引用，标记知识文档中的疑似提示注入，并严格校验生成结果只能引用本次提供的证据。设置页支持在不配置 Key 的情况下预览即将发送给 DeepSeek 的最小上下文；只有用户在本机安全注入 Key 并明确点击生成，问题与所选证据才会离开本机。DeepSeek 真实 API 单样本冒烟测试已通过，但完整生成质量评测仍未完成。
+0.4.4 在本地混合检索之上增加平台无关的引用式 RAG 管线：固定上下文预算，为每条证据分配 `S1`～`S8` 可追溯引用，标记知识文档中的疑似提示注入，并严格校验生成结果只能引用本次提供的证据。设置页支持 Windows DPAPI 当前用户加密保存 DeepSeek Key，重启后自动加载，且浏览器和状态接口均不能读回明文。12 条真实 DeepSeek 固定评测覆盖正常回答、证据不足、冲突证据与提示注入，结构合法率、拒答准确率、引用正确率、确定性忠实度代理和注入抵抗率均为 100%；P50 为 10.816 秒，P95 为 13.214 秒。
 
 0.4.3 完成可真实运行、可消融评测的本地混合检索链路：BM25 与 `BAAI/bge-small-zh-v1.5` 分别召回前 20 条，使用 RRF 融合，再可选用本地量化多语言 Cross-Encoder 重排前 12 条。设置页可在关键词、向量、混合和重排四种模式间切换，并查看双路排名、向量相似度、RRF 分数、重排分数与名次变化。项目使用 15 份真实项目文档和 100 条人工标注查询，固定划分 20 条开发集与 80 条保留测试集；最终重排模式在保留集达到 Recall@1 0.4533、Recall@5 0.7933、MRR@5 0.5891、nDCG@5 0.6383、拒答准确率 1.0000。
 
@@ -78,13 +78,17 @@ python -m pip install -r server/requirements.txt
 powershell -ExecutionPolicy Bypass -File scripts/download_retrieval_models.ps1
 ```
 
-引用式 RAG 的上下文预览无需 AI 平台或 API Key。项目已按 [DeepSeek 官方 API 文档](https://api-docs.deepseek.com/zh-cn/) 接好 `https://api.deepseek.com/chat/completions`、Bearer 鉴权和 JSON Output；默认模型为 `deepseek-v4-flash`，可通过环境变量更改。推荐在终端运行以下命令，由隐藏输入提示临时注入 Key：
+引用式 RAG 的上下文预览无需 AI 平台或 API Key。项目已按 [DeepSeek 官方 API 文档](https://api-docs.deepseek.com/zh-cn/) 接好 `https://api.deepseek.com/chat/completions`、Bearer 鉴权和 JSON Output；默认模型为 `deepseek-v4-flash`，可通过环境变量更改。
+
+启动后端和网站后，在“设置 → DeepSeek 安全凭据”输入一次 Key。Key 由本机后端使用 Windows DPAPI 按当前 Windows 用户加密，明文不会进入源码、浏览器存储、应用数据备份或 API 响应；以后使用普通 `npm run dev:api` 启动即可自动读取。只有主动替换或删除时才需要再次操作。
+
+以下入口仍可用于同时指定模型和 API 地址，但不会再要求终端重复输入 Key：
 
 ```bash
 npm run dev:api:deepseek
 ```
 
-该命令用于替代普通的 `npm run dev:api`，两者不要同时运行。隐藏输入方式不会把 Key 写入代码或文件。也可以参考 [`.env.example`](.env.example) 自行设置后端进程环境变量；不要使用 `VITE_` 前缀，也不要把真实 `.env` 提交到 Git。
+该命令用于替代普通的 `npm run dev:api`，两者不要同时运行。也可以参考 [`.env.example`](.env.example) 显式设置后端进程环境变量；环境变量会在该次启动中覆盖持久化凭据。不要使用 `VITE_` 前缀，也不要把真实 `.env` 提交到 Git。
 
 生产构建：
 
@@ -102,7 +106,10 @@ npm run eval:retrieval:real
 npm run eval:retrieval:vector
 npm run eval:retrieval:calibrate
 npm run eval:retrieval:ablation
+npm run eval:generation:real
 ```
+
+真实生成评测需要先在设置页保存 DeepSeek Key；命令只读取本机 DPAPI 密文，报告不会记录 Key。已冻结的 0.4.4 报告见 [`artifacts/evals/0.4.4-generation-real-eval.md`](artifacts/evals/0.4.4-generation-real-eval.md)。
 
 构建结果位于 `dist/`。
 
@@ -141,6 +148,6 @@ npm run desktop:dist
 - 桌面程序与浏览器网站使用不同的本地数据空间，网页中的历史记录不会自动迁移到桌面程序。
 - 在设置页确认清空设备数据时会同时清除知识库；清除浏览器站点数据也会清除训练记录与本地知识来源。
 - BM25 请求无状态；只有用户明确点击“构建本地索引”后，已授权文本块和 512 维向量才会保存到本机 Qdrant。语料变化会触发增量更新，用户可随时在实验台清除索引。
-- BGE Embedding、Qdrant 和多语言 Cross-Encoder 均在本机 CPU 运行；模型缺失时界面会说明并降级。当前没有接入生成式大模型，也不会把个人资料发送到云端。
+- BGE Embedding、Qdrant 和多语言 Cross-Encoder 均在本机 CPU 运行；模型缺失时界面会说明并降级。只有用户明确点击“生成引用回答”后，本次问题与界面已预览的最小证据才会发送给 DeepSeek；本地构建、检索和预览不会出站。
 - 当前分数是任务表现指数，不是医学诊断、人群百分位或“脑年龄”。
 - 网站不用于诊断或治疗 ADHD 等注意障碍。

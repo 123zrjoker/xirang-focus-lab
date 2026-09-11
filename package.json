@@ -17,6 +17,7 @@
     "eval:retrieval:vector": "python -m server.evals.run_vector",
     "eval:retrieval:calibrate": "python -m server.evals.calibrate_hybrid",
     "eval:retrieval:ablation": "python -m server.evals.run_ablation",
+    "eval:generation:real": "python -m server.evals.run_generation",
     "preview": "vite preview",
     "desktop": "npm run build && electron .",
     "desktop:open": "electron .",

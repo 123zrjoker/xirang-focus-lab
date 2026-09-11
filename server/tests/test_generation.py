@@ -6,6 +6,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 import server.main as main_module
+import server.generation as generation_module
 from server.generation import (
     CompatibleChatProvider,
     ContextEvidence,
@@ -243,6 +244,80 @@ def test_deepseek_provider_uses_official_json_contract_without_exposing_key(monk
     assert result.payload.citation_ids == ["S1"]
 
 
+def test_deepseek_provider_loads_persisted_credential_when_environment_is_empty(monkeypatch) -> None:
+    class FakeCredentialStore:
+        storage_kind = "windows_dpapi_current_user"
+        supported = True
+
+        def load(self):
+            return "credential-persisted-secret-value"
+
+    monkeypatch.delenv("DEEPSEEK_API_KEY", raising=False)
+    monkeypatch.delenv("XIRANG_AI_API_KEY", raising=False)
+    monkeypatch.setattr(generation_module, "deepseek_credential_store", FakeCredentialStore())
+
+    provider = DeepSeekChatProvider()
+    status = provider.status()
+
+    assert provider.available is True
+    assert status["credentialSource"] == "windows_dpapi_current_user"
+    assert "credential-persisted-secret-value" not in str(status)
+
+
+def test_deepseek_credential_api_saves_replaces_and_deletes_without_echoing_secret(monkeypatch) -> None:
+    class FakeCredentialStore:
+        storage_kind = "windows_dpapi_current_user"
+        supported = True
+        saved = None
+
+        def save(self, value):
+            self.saved = value
+
+        def delete(self):
+            self.saved = None
+            return True
+
+    store = FakeCredentialStore()
+    monkeypatch.setattr(main_module, "deepseek_credential_store", store)
+    monkeypatch.setattr(
+        main_module,
+        "generation_provider",
+        DeepSeekChatProvider(api_key="", credential_source="none"),
+    )
+    client = TestClient(main_module.app)
+    secret = "credential-api-test-secret-value"
+
+    saved = client.put("/api/settings/ai-provider/deepseek/credential", json={"apiKey": secret})
+
+    assert saved.status_code == 200
+    assert store.saved == secret
+    assert saved.json()["configured"] is True
+    assert saved.json()["credentialSource"] == "windows_dpapi_current_user"
+    assert secret not in saved.text
+    assert secret not in client.get("/api/health").text
+
+    deleted = client.delete("/api/settings/ai-provider/deepseek/credential")
+
+    assert deleted.status_code == 200
+    assert deleted.json()["configured"] is False
+    assert store.saved is None
+
+
+def test_deepseek_credential_api_masks_invalid_input(monkeypatch) -> None:
+    class FakeCredentialStore:
+        storage_kind = "windows_dpapi_current_user"
+        supported = True
+
+    monkeypatch.setattr(main_module, "deepseek_credential_store", FakeCredentialStore())
+    client = TestClient(main_module.app)
+    invalid = "too-short"
+
+    response = client.put("/api/settings/ai-provider/deepseek/credential", json={"apiKey": invalid})
+
+    assert response.status_code == 422
+    assert invalid not in response.text
+
+
 def test_rag_api_previews_context_without_calling_ai(monkeypatch) -> None:
     index = LocalVectorIndex(provider=FakeEmbeddingProvider(), memory=True)
     source = chunk("focus", "专注前把手机调成静音并放到看不见的位置。")
@@ -285,7 +360,13 @@ def test_rag_api_returns_provider_answer_with_traceable_citation(monkeypatch) ->
     assert payload["status"] == "answered"
     assert payload["citationIds"] == ["S1"]
     assert payload["evidence"][0]["chunkId"] == "focus"
-    assert payload["generation"] == {"durationMs": 12.3, "inputTokens": 120, "outputTokens": 28}
+    assert payload["generation"] == {
+        "durationMs": 12.3,
+        "inputTokens": 120,
+        "outputTokens": 28,
+        "cacheHitInputTokens": None,
+        "cacheMissInputTokens": None,
+    }
 
 
 def test_rag_api_rejects_stale_index_before_generation(monkeypatch) -> None:
