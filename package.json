@@ -8,6 +8,7 @@
   "scripts": {
     "dev": "vite",
     "dev:api": "python -m uvicorn server.main:app --host 127.0.0.1 --port 8000",
+    "dev:api:deepseek": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/start_deepseek_api.ps1",
     "build": "tsc -b && vite build",
     "test": "vitest run",
     "test:api": "python -m pytest server/tests",

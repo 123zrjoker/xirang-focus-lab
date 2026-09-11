@@ -134,7 +134,7 @@ app.whenReady().then(async () => {
   if (!ragResult.output.includes('S1') || !ragResult.output.includes('减少手机分心') || !ragResult.output.includes('上下文字符')) {
     throw new Error(`RAG 上下文或引用标识不正确：${ragResult.output}`)
   }
-  if (!ragResult.provider.includes('等待 AI 平台配置') || ragResult.generationDisabled !== true) {
+  if (!ragResult.provider.includes('等待 DeepSeek Key') || ragResult.generationDisabled !== true) {
     throw new Error('未配置平台时的生成禁用状态不正确')
   }
 

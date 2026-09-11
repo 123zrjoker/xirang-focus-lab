@@ -325,7 +325,7 @@ export function KnowledgeRetrievalLab({ chunks, onStored }: KnowledgeRetrievalLa
             <i />
             {health?.generation?.available
               ? `${health.generation.model ?? health.generation.provider} 已配置`
-              : '等待 AI 平台配置'}
+              : '等待 DeepSeek Key'}
           </span>
         </div>
 
@@ -349,7 +349,7 @@ export function KnowledgeRetrievalLab({ chunks, onStored }: KnowledgeRetrievalLa
         </div>
 
         {!health?.generation?.available && (
-          <p className="rag-platform-note">平台无关的调用契约已就绪。后续提供 AI 平台地址、鉴权方式和模型名后即可启用生成；Key 只放在本地后端环境变量中。</p>
+          <p className="rag-platform-note">DeepSeek 调用契约已就绪。运行 npm run dev:api:deepseek 并在终端隐藏输入 Key 后即可启用生成；Key 只存在于本地后端进程环境中。</p>
         )}
         {ragError && <div className="rag-error" role="alert"><span>!</span><p>{ragError}</p></div>}
 

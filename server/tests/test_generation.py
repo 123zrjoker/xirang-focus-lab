@@ -9,6 +9,7 @@ import server.main as main_module
 from server.generation import (
     CompatibleChatProvider,
     ContextEvidence,
+    DeepSeekChatProvider,
     GroundedAnswerPayload,
     ProviderGeneration,
     ProviderResponseError,
@@ -116,6 +117,10 @@ def test_grounded_payload_rejects_unknown_or_missing_citations() -> None:
         validate_grounded_payload(GroundedAnswerPayload(
             answer="回答", citation_ids=["S9"], uncertainties=[], refused=False,
         ), evidence)
+    with pytest.raises(ProviderResponseError, match="没有提供"):
+        validate_grounded_payload(GroundedAnswerPayload(
+            answer="回答", citation_ids=[], uncertainties=[], refused=False,
+        ), evidence)
 
 
 def test_compatible_provider_keeps_key_out_of_status_and_validates_response(monkeypatch) -> None:
@@ -173,10 +178,69 @@ def test_compatible_provider_keeps_key_out_of_status_and_validates_response(monk
     assert captured["json"]["response_format"]["type"] == "json_schema"
     assert result.payload.citation_ids == ["S1"]
     assert result.input_tokens == 88
-    with pytest.raises(ProviderResponseError, match="没有提供"):
-        validate_grounded_payload(GroundedAnswerPayload(
-            answer="回答", citation_ids=[], uncertainties=[], refused=False,
-        ), evidence)
+
+
+def test_deepseek_provider_uses_official_json_contract_without_exposing_key(monkeypatch) -> None:
+    captured = {}
+
+    class FakeClient:
+        def __init__(self, **kwargs):
+            captured["client"] = kwargs
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_args):
+            return None
+
+        def post(self, url, *, headers, json):
+            captured.update({"url": url, "headers": headers, "json": json})
+            return httpx.Response(
+                200,
+                request=httpx.Request("POST", url),
+                json={
+                    "choices": [{
+                        "finish_reason": "stop",
+                        "message": {"content": '{"answer":"先把手机放远。","citation_ids":["S1"],"uncertainties":[],"refused":false}'},
+                    }],
+                    "usage": {"prompt_tokens": 90, "completion_tokens": 18},
+                },
+            )
+
+    no_key_status = DeepSeekChatProvider(api_key="").status()
+    assert no_key_status["available"] is False
+    assert no_key_status["configured"] is False
+    assert no_key_status["endpointHost"] == "api.deepseek.com"
+
+    monkeypatch.setattr("server.generation.httpx.Client", FakeClient)
+    provider = DeepSeekChatProvider(api_key="deepseek-secret", model="deepseek-v4-flash")
+    evidence = [ContextEvidence(
+        reference_id="S1",
+        chunk_id="chunk-1",
+        source_id="source-1",
+        source_title="资料",
+        heading="章节",
+        content="专注前把手机放远。",
+        start_line=1,
+        end_line=1,
+        start_offset=0,
+        end_offset=10,
+        retrieval_score=0.9,
+        truncated=False,
+        instruction_flagged=False,
+    )]
+
+    result = provider.generate_answer("怎样减少手机分心？", evidence)
+
+    assert "deepseek-secret" not in str(provider.status())
+    assert captured["url"] == "https://api.deepseek.com/chat/completions"
+    assert captured["headers"]["Authorization"] == "Bearer deepseek-secret"
+    assert captured["json"]["response_format"] == {"type": "json_object"}
+    assert captured["json"]["max_tokens"] == 1_200
+    assert captured["json"]["thinking"] == {"type": "disabled"}
+    assert captured["json"]["stream"] is False
+    assert "json" in captured["json"]["messages"][0]["content"]
+    assert result.payload.citation_ids == ["S1"]
 
 
 def test_rag_api_previews_context_without_calling_ai(monkeypatch) -> None:
