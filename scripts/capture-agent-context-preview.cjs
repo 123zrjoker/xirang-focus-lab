@@ -89,22 +89,82 @@ app.whenReady().then(async () => {
   }
   if (result.overflow) throw new Error('桌面端行动上下文卡片出现横向溢出')
 
-  currentStep = '截取桌面端预览'
-  await window.webContents.executeJavaScript("document.documentElement.style.scrollBehavior = 'auto'; window.scrollTo(0, document.querySelector('.agent-context-card').getBoundingClientRect().top + window.scrollY - 110)")
-  await pause(300)
-  await capture(window, '0.5.0-agent-context-preview-desktop.png')
+  currentStep = '使用模拟只读结果生成计划'
+  await window.webContents.executeJavaScript(`(() => {
+    const originalFetch = window.fetch.bind(window)
+    const previewedSnapshot = JSON.parse(document.querySelector('.agent-snapshot-preview pre').textContent)
+    window.fetch = async (input, init) => {
+      if (String(input) !== '/api/agent/plan') return originalFetch(input, init)
+      const body = JSON.parse(init.body)
+      if (JSON.stringify(body.context) !== JSON.stringify(previewedSnapshot)) {
+        throw new Error('发送的快照与预览不一致')
+      }
+      return new Response(JSON.stringify({
+        schemaVersion: 1,
+        graphVersion: '0.5.0-read-only-v1',
+        threadId: 'qa-thread-agent-context',
+        runId: 'qa-run-agent-context',
+        status: 'completed',
+        planDraft: {
+          title: '未来 7 天行动计划',
+          summary: '根据本次明确授权的未完成待办与专注摘要生成；这是只读草案。',
+          items: [
+            {
+              title: '完成 Agent 核心契约', firstStep: '补齐接口测试并运行回归。',
+              completionCriteria: '新增测试通过且没有破坏既有行为。', estimatedMinutes: 30,
+              rationale: '来自当前待办与明确记录的下一步。', sourceActionSlipIds: ['agent-current'], evidenceRefs: []
+            },
+            {
+              title: '整理周计划演示数据', firstStep: '准备一组不含私人正文的合成待办。',
+              completionCriteria: '演示数据能覆盖工具选择与计划生成。', estimatedMinutes: 25,
+              rationale: '来自本次授权的收件箱待办。', sourceActionSlipIds: ['agent-inbox'], evidenceRefs: []
+            },
+            {
+              title: '做一次移动端复查', firstStep: '以 430 像素宽度检查结果卡片。',
+              completionCriteria: '页面没有横向溢出，计划信息可完整阅读。', estimatedMinutes: 15,
+              rationale: '用于验证当前只读结果界面。', sourceActionSlipIds: [], evidenceRefs: []
+            }
+          ],
+          assumptions: ['当前版本不会保存计划或修改待办。'],
+          evidenceRefs: []
+        },
+        evidence: [],
+        toolResults: [
+          { callId: 'qa-todos', name: 'query_todos', status: 'success', output: {}, error: null, durationMs: 1 },
+          { callId: 'qa-focus', name: 'query_focus_summary', status: 'success', output: {}, error: null, durationMs: 1 }
+        ],
+        validationErrors: [],
+        trace: []
+      }), { status: 200, headers: { 'Content-Type': 'application/json' } })
+    }
+  })()`)
+  await window.webContents.executeJavaScript("document.querySelector('.agent-run-button').click()")
+  await waitFor(window, "document.querySelector('.agent-plan-result.completed')", '计划结果')
+  const planResult = await window.webContents.executeJavaScript(`(() => ({
+    text: document.querySelector('.agent-plan-result')?.innerText || '',
+    overflow: document.documentElement.scrollWidth > document.documentElement.clientWidth,
+  }))()`)
+  if (!planResult.text.includes('契约校验通过') || !planResult.text.includes('当前版本没有保存或执行按钮')) {
+    throw new Error(`计划结果内容不完整：${planResult.text}`)
+  }
+  if (planResult.overflow) throw new Error('桌面端计划结果出现横向溢出')
 
-  currentStep = '验证并截取移动端预览'
+  currentStep = '截取桌面端计划结果'
+  await window.webContents.executeJavaScript("document.documentElement.style.scrollBehavior = 'auto'; window.scrollTo(0, document.querySelector('.agent-plan-result').getBoundingClientRect().top + window.scrollY - 110)")
+  await pause(300)
+  await capture(window, '0.5.0-agent-plan-result-desktop.png')
+
+  currentStep = '验证并截取移动端计划结果'
   window.setSize(430, 900)
   await pause(350)
-  await window.webContents.executeJavaScript("window.scrollTo(0, document.querySelector('.agent-context-card').getBoundingClientRect().top + window.scrollY - 68)")
+  await window.webContents.executeJavaScript("window.scrollTo(0, document.querySelector('.agent-plan-result').getBoundingClientRect().top + window.scrollY - 68)")
   await pause(300)
   if (await window.webContents.executeJavaScript('document.documentElement.scrollWidth > document.documentElement.clientWidth')) {
-    throw new Error('移动端行动上下文卡片出现横向溢出')
+    throw new Error('移动端计划结果出现横向溢出')
   }
-  await capture(window, '0.5.0-agent-context-preview-mobile.png')
+  await capture(window, '0.5.0-agent-plan-result-mobile.png')
 
-  console.log('0.5.0 行动上下文发送前预览验收通过')
+  console.log('0.5.0 行动上下文与只读计划结果验收通过')
   await window.close()
   app.quit()
 }).catch((error) => {

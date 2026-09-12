@@ -1,0 +1,58 @@
+{
+  "threadId": "smoke-agent-20260912",
+  "context": {
+    "schemaVersion": 1,
+    "snapshotId": "snapshot-smoke-20260912",
+    "createdAt": "2026-09-12T14:05:00+08:00",
+    "timezone": "Asia/Shanghai",
+    "baseStateRevision": "d7ec9e46d73f4ab69f7b19d6245531d18853193de505f90e8033e646f53976a3",
+    "userRequest": "请把当前两个待办整理成未来七天可执行的行动计划",
+    "goalAndPreferences": {
+      "goal": "work",
+      "dailyTargetMinutes": 30,
+      "preferredFocusMinutes": 25
+    },
+    "activeActionSlips": [
+      {
+        "id": "todo-contract",
+        "title": "完成 Agent 核心契约",
+        "status": "current",
+        "updatedAt": "2026-09-12T13:00:00+08:00",
+        "nextStep": "补齐接口测试"
+      },
+      {
+        "id": "todo-preview",
+        "title": "完善快照预览界面",
+        "status": "inbox",
+        "updatedAt": "2026-09-12T12:00:00+08:00",
+        "nextStep": "检查移动端布局"
+      }
+    ],
+    "recentDailyPlans": [],
+    "focusSummary": {
+      "windowDays": 7,
+      "windowStartedAt": "2026-09-05T14:05:00+08:00",
+      "sessionCount": 2,
+      "totalMinutes": 50,
+      "averageCompletionRate": 85,
+      "averageSubjectiveFocus": 4,
+      "distractionCounts": {
+        "phone": 1
+      }
+    },
+    "selectedKnowledgeSourceIds": [],
+    "consentScope": [
+      "todos",
+      "focus_summary"
+    ],
+    "sampleBoundaries": {
+      "actionSlipLimit": 2,
+      "actionSlipTotal": 2,
+      "dailyPlanLimit": 0,
+      "dailyPlanTotal": 0,
+      "focusWindowDays": 7,
+      "knowledgeSourceTotal": 0,
+      "knowledgeSourceSelected": 0
+    }
+  }
+}

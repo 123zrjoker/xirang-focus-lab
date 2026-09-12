@@ -11,7 +11,7 @@ from .contracts import (
     ToolRequest,
     ToolResult,
 )
-from .planner import Planner
+from .planner import Planner, PlannerExecutionError
 from .policies import PermissionPolicy
 from .tools import ToolRegistry
 from .tracing import TraceRecorder
@@ -71,16 +71,22 @@ class AgentNodes:
         tool_results = [ToolResult.model_validate(item) for item in state.get("tool_results", [])]
         try:
             decision = self.planner.plan(snapshot, tool_results)
+        except PlannerExecutionError as error:
+            message = str(error)
+            self.trace.record(state["run_id"], "run_failed", node=node, details={"reason": message})
+            return {"status": "failed", "validation_errors": [message], "step_count": next_step}
         except Exception as error:
             message = f"规划器执行失败：{type(error).__name__}。"
             self.trace.record(state["run_id"], "run_failed", node=node, details={"reason": message})
             return {"status": "failed", "validation_errors": [message], "step_count": next_step}
 
         if decision.tool_requests:
-            self._end(state, node, {
+            details = {
                 "decision": "tools",
                 "tools": [item.name for item in decision.tool_requests],
-            })
+            }
+            details.update(getattr(self.planner, "last_generation_metadata", {}))
+            self._end(state, node, details)
             return {
                 "tool_requests": [item.model_dump(mode="json") for item in decision.tool_requests],
                 "status": "using_tools",
@@ -88,7 +94,9 @@ class AgentNodes:
             }
 
         assert decision.plan_draft is not None
-        self._end(state, node, {"decision": "plan", "item_count": len(decision.plan_draft.items)})
+        details = {"decision": "plan", "item_count": len(decision.plan_draft.items)}
+        details.update(getattr(self.planner, "last_generation_metadata", {}))
+        self._end(state, node, details)
         return {
             "plan_draft": decision.plan_draft.model_dump(mode="json"),
             "tool_requests": [],
@@ -102,10 +110,26 @@ class AgentNodes:
         snapshot = ActionContextSnapshot.model_validate(state["context_snapshot"])
         requests = [ToolRequest.model_validate(item) for item in state.get("tool_requests", [])]
         previous_results = [ToolResult.model_validate(item) for item in state.get("tool_results", [])]
-        results = [
-            self.tools.execute(request, snapshot, self.policy, self.trace, state["run_id"])
-            for request in requests
-        ]
+        completed_names = {item.name for item in previous_results}
+        results: list[ToolResult] = []
+        for request in requests:
+            if request.name in completed_names:
+                self.trace.record(state["run_id"], "permission_decision", node=node, details={
+                    "call_id": request.call_id,
+                    "tool": request.name,
+                    "allowed": False,
+                    "reason": "同一运行中不重复执行已完成的只读工具。",
+                })
+                results.append(ToolResult(
+                    call_id=request.call_id,
+                    name=request.name,
+                    status="denied",
+                    error="同一运行中不重复执行已完成的只读工具。",
+                    duration_ms=0,
+                ))
+                continue
+            results.append(self.tools.execute(request, snapshot, self.policy, self.trace, state["run_id"]))
+            completed_names.add(request.name)
         all_results = [*previous_results, *results]
         evidence_by_id = {
             item.reference_id: item

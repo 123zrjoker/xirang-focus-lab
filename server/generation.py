@@ -83,6 +83,18 @@ class ProviderGeneration:
     cache_miss_input_tokens: Optional[int] = None
 
 
+@dataclass(frozen=True)
+class StructuredGeneration:
+    payload: dict
+    provider: str
+    model: str
+    duration_ms: float
+    input_tokens: Optional[int] = None
+    output_tokens: Optional[int] = None
+    cache_hit_input_tokens: Optional[int] = None
+    cache_miss_input_tokens: Optional[int] = None
+
+
 class AIProvider(Protocol):
     name: str
     model: Optional[str]
@@ -317,38 +329,47 @@ class CompatibleChatProvider:
         value = f"{self.auth_scheme} {self.api_key}".strip() if self.auth_scheme else self.api_key
         return {"Content-Type": "application/json", self.auth_header: value}
 
-    def _request_payload(self, query: str, evidence: Sequence[ContextEvidence]) -> dict:
+    def _decorate_request_payload(self, payload: dict) -> dict:
+        return payload
+
+    def _structured_request_payload(
+        self,
+        messages: Sequence[dict],
+        *,
+        schema_name: str,
+        schema: dict,
+        max_tokens: Optional[int] = None,
+        temperature: float = 0.1,
+    ) -> dict:
         payload: dict = {
             "model": self.model,
-            "messages": _messages(query, evidence),
-            "temperature": 0.1,
+            "messages": list(messages),
+            "temperature": temperature,
         }
-        if self.max_tokens is not None:
-            payload["max_tokens"] = self.max_tokens
+        output_limit = self.max_tokens if max_tokens is None else max_tokens
+        if output_limit is not None:
+            payload["max_tokens"] = output_limit
         if self.response_format == "json_schema":
             payload["response_format"] = {
                 "type": "json_schema",
                 "json_schema": {
-                    "name": "xirang_grounded_answer",
+                    "name": schema_name,
                     "strict": True,
-                    "schema": _answer_schema(),
+                    "schema": schema,
                 },
             }
         elif self.response_format == "json_object":
             payload["response_format"] = {"type": "json_object"}
-        return payload
+        return self._decorate_request_payload(payload)
 
-    def generate_answer(
-        self,
-        query: str,
-        evidence: Sequence[ContextEvidence],
-    ) -> ProviderGeneration:
-        if not self.available or not self.model:
-            raise ProviderUnavailableError(
-                "AI 生成平台尚未配置。检索和上下文预览仍可使用，待提供目标平台参数后再启用生成。"
-            )
-        request_payload = self._request_payload(query, evidence)
+    def _request_payload(self, query: str, evidence: Sequence[ContextEvidence]) -> dict:
+        return self._structured_request_payload(
+            _messages(query, evidence),
+            schema_name="xirang_grounded_answer",
+            schema=_answer_schema(),
+        )
 
+    def _send_payload(self, request_payload: dict) -> tuple[dict, float]:
         started = time.perf_counter()
         try:
             with httpx.Client(timeout=self.timeout_seconds) as client:
@@ -361,30 +382,77 @@ class CompatibleChatProvider:
             raise ProviderResponseError(f"AI 生成平台返回 HTTP {error.response.status_code}。") from error
         except (httpx.RequestError, ValueError) as error:
             raise ProviderResponseError("无法连接或解析 AI 生成平台响应。") from error
+        if not isinstance(body, dict):
+            raise ProviderResponseError("AI 生成平台响应不是 JSON 对象。")
+        return body, round((time.perf_counter() - started) * 1_000, 3)
 
+    def generate_structured(
+        self,
+        messages: Sequence[dict],
+        *,
+        schema_name: str,
+        schema: dict,
+        max_tokens: Optional[int] = None,
+        temperature: float = 0.1,
+    ) -> StructuredGeneration:
+        if not self.available or not self.model:
+            raise ProviderUnavailableError(
+                "AI 生成平台尚未配置。请先在设置页保存 DeepSeek Key。"
+            )
+        request_payload = self._structured_request_payload(
+            messages,
+            schema_name=schema_name,
+            schema=schema,
+            max_tokens=max_tokens,
+            temperature=temperature,
+        )
+        body, duration_ms = self._send_payload(request_payload)
         try:
             choice = body["choices"][0]
             finish_reason = choice.get("finish_reason")
             if finish_reason not in (None, "stop"):
                 raise ProviderResponseError(f"AI 生成平台未完整完成回答（finish_reason={finish_reason}）。")
-            content = choice["message"]["content"]
-            raw_payload = _json_content(content)
-            parsed_payload = GroundedAnswerPayload.model_validate(raw_payload)
+            raw_payload = _json_content(choice["message"]["content"])
         except ProviderResponseError:
             raise
-        except (KeyError, IndexError, TypeError, ValidationError) as error:
+        except (KeyError, IndexError, TypeError) as error:
             raise ProviderResponseError("AI 生成平台响应不符合约定的结构。") from error
-        payload = validate_grounded_payload(parsed_payload, evidence)
-        usage = body.get("usage") if isinstance(body, dict) else None
-        return ProviderGeneration(
-            payload=payload,
+        usage = body.get("usage")
+        return StructuredGeneration(
+            payload=raw_payload,
             provider=self.name,
             model=self.model,
-            duration_ms=round((time.perf_counter() - started) * 1_000, 3),
+            duration_ms=duration_ms,
             input_tokens=usage.get("prompt_tokens") if isinstance(usage, dict) else None,
             output_tokens=usage.get("completion_tokens") if isinstance(usage, dict) else None,
             cache_hit_input_tokens=usage.get("prompt_cache_hit_tokens") if isinstance(usage, dict) else None,
             cache_miss_input_tokens=usage.get("prompt_cache_miss_tokens") if isinstance(usage, dict) else None,
+        )
+
+    def generate_answer(
+        self,
+        query: str,
+        evidence: Sequence[ContextEvidence],
+    ) -> ProviderGeneration:
+        generated = self.generate_structured(
+            _messages(query, evidence),
+            schema_name="xirang_grounded_answer",
+            schema=_answer_schema(),
+        )
+        try:
+            parsed_payload = GroundedAnswerPayload.model_validate(generated.payload)
+        except ValidationError as error:
+            raise ProviderResponseError("AI 生成平台响应不符合约定的结构。") from error
+        payload = validate_grounded_payload(parsed_payload, evidence)
+        return ProviderGeneration(
+            payload=payload,
+            provider=generated.provider,
+            model=generated.model,
+            duration_ms=generated.duration_ms,
+            input_tokens=generated.input_tokens,
+            output_tokens=generated.output_tokens,
+            cache_hit_input_tokens=generated.cache_hit_input_tokens,
+            cache_miss_input_tokens=generated.cache_miss_input_tokens,
         )
 
 
@@ -456,8 +524,7 @@ class DeepSeekChatProvider(CompatibleChatProvider):
         status["credentialStorageError"] = self.credential_storage_error
         return status
 
-    def _request_payload(self, query: str, evidence: Sequence[ContextEvidence]) -> dict:
-        payload = super()._request_payload(query, evidence)
+    def _decorate_request_payload(self, payload: dict) -> dict:
         payload["thinking"] = {"type": "disabled"}
         payload["stream"] = False
         return payload

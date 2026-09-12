@@ -4,9 +4,7 @@ from collections.abc import Iterator
 from typing import Any
 from uuid import uuid4
 
-from langgraph.checkpoint.memory import InMemorySaver
-from langgraph.checkpoint.serde.jsonplus import JsonPlusSerializer
-
+from .checkpoints import build_in_memory_checkpointer
 from .contracts import (
     AGENT_GRAPH_VERSION,
     AGENT_SCHEMA_VERSION,
@@ -42,9 +40,7 @@ class AgentHarness:
         self.policy = policy or PermissionPolicy()
         self.trace = trace or TraceRecorder()
         self.prompts = prompts or build_prompt_registry()
-        self.checkpointer = checkpointer or InMemorySaver(
-            serde=JsonPlusSerializer(allowed_msgpack_modules=()),
-        )
+        self.checkpointer = checkpointer or build_in_memory_checkpointer()
         self.nodes = AgentNodes(self.planner, self.tools, self.policy, self.trace)
         self.graph = build_agent_graph(self.nodes, checkpointer=self.checkpointer)
 

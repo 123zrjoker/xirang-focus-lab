@@ -144,7 +144,7 @@ class ToolRegistry:
                 call_id=request.call_id,
                 name=request.name,
                 status="error",
-                error=f"工具参数不符合契约：{error.errors(include_url=False)}",
+                error=f"工具参数不符合契约（{len(error.errors())} 项校验错误）。",
                 duration_ms=round((time.perf_counter() - started) * 1_000, 3),
             )
         except Exception as error:

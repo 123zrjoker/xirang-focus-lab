@@ -30,6 +30,13 @@ from .generation import (
     build_context,
     generation_provider,
 )
+from .agent.checkpoints import build_in_memory_checkpointer
+from .agent.contracts import AGENT_GRAPH_VERSION, ActionContextSnapshot, AgentRunResult
+from .agent.harness import AgentHarness
+from .agent.planner import DeepSeekActionPlanner
+from .agent.prompts import build_prompt_registry
+from .agent.tools import build_read_only_registry
+from .agent.tracing import TraceRecorder
 
 
 def to_camel(value: str) -> str:
@@ -219,6 +226,20 @@ class DeepSeekCredentialStatusResponse(ApiModel):
     storage_description: str
 
 
+class AgentPlanRequest(ApiModel):
+    thread_id: str = Field(min_length=1, max_length=100)
+    context: ActionContextSnapshot
+
+
+class AgentFoundationStatusResponse(ApiModel):
+    graph_version: str
+    mode: Literal["read_only"] = "read_only"
+    available: bool
+    provider: str
+    model: Optional[str]
+    tools: list[str]
+
+
 app = FastAPI(
     title="Xirang Retrieval Service",
     description="Local keyword and semantic retrieval service for the Xirang knowledge base.",
@@ -230,6 +251,10 @@ app.add_middleware(
     allow_methods=["GET", "POST", "PUT", "DELETE"],
     allow_headers=["Content-Type"],
 )
+
+agent_checkpointer = build_in_memory_checkpointer()
+agent_trace_recorder = TraceRecorder()
+agent_prompt_registry = build_prompt_registry()
 
 
 @app.get("/api/health")
@@ -325,6 +350,43 @@ def delete_deepseek_credential() -> DeepSeekCredentialStatusResponse:
         raise HTTPException(status_code=500, detail=str(error)) from error
     generation_provider = DeepSeekChatProvider(api_key="", credential_source="none")
     return deepseek_credential_status()
+
+
+def build_active_agent_harness() -> AgentHarness:
+    provider = generation_provider
+    if not hasattr(provider, "generate_structured"):
+        raise HTTPException(status_code=503, detail="当前 AI Provider 不支持 Agent 结构化规划。")
+    planner = DeepSeekActionPlanner(
+        provider=provider,
+        system_prompt=agent_prompt_registry.get("weekly_planner").content,
+    )
+    return AgentHarness(
+        planner=planner,
+        tools=build_read_only_registry(semantic_index, reranker_provider),
+        trace=agent_trace_recorder,
+        prompts=agent_prompt_registry,
+        checkpointer=agent_checkpointer,
+    )
+
+
+@app.get("/api/agent/status", response_model=AgentFoundationStatusResponse)
+def agent_foundation_status() -> AgentFoundationStatusResponse:
+    status = generation_provider.status()
+    return AgentFoundationStatusResponse(
+        graph_version=AGENT_GRAPH_VERSION,
+        available=bool(status.get("available")) and hasattr(generation_provider, "generate_structured"),
+        provider=str(status.get("provider") or getattr(generation_provider, "name", "unknown")),
+        model=status.get("model"),
+        tools=[definition.name for definition in build_read_only_registry(semantic_index, reranker_provider).definitions()],
+    )
+
+
+@app.post("/api/agent/plan", response_model=AgentRunResult)
+def run_agent_plan(request: AgentPlanRequest) -> AgentRunResult:
+    status = generation_provider.status()
+    if not status.get("available"):
+        raise HTTPException(status_code=503, detail="DeepSeek 尚未配置，请先在设置页安全保存 API Key。")
+    return build_active_agent_harness().run(request.context, request.thread_id)
 
 
 def request_chunks(items: list[ChunkInput]) -> list[RetrievalChunk]:

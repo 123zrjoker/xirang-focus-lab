@@ -29,7 +29,10 @@ class PermissionPolicy:
             return PermissionDecision(False, f"缺少显式授权：{', '.join(missing)}。")
 
         if definition.name == "retrieve_personal_knowledge":
-            requested_ids = request.arguments.get("source_ids", [])
+            requested_ids = request.arguments.get(
+                "source_ids",
+                request.arguments.get("sourceIds", []),
+            )
             if not isinstance(requested_ids, list):
                 return PermissionDecision(False, "知识来源参数必须是列表。")
             allowed_ids = set(snapshot.selected_knowledge_source_ids)

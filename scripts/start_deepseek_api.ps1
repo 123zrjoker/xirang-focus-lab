@@ -19,7 +19,11 @@ try {
     else {
         Write-Host "The explicit DEEPSEEK_API_KEY environment variable overrides the saved credential for this startup. Model: $Model"
     }
-    python -m uvicorn server.main:app --host 127.0.0.1 --port 8000
+    $pythonExecutable = Join-Path $PSScriptRoot "..\.venv311\Scripts\python.exe"
+    if (-not (Test-Path -LiteralPath $pythonExecutable)) {
+        throw "Python 3.11 项目环境不存在。请先运行 npm run setup:api:py311。"
+    }
+    & $pythonExecutable -m uvicorn server.main:app --host 127.0.0.1 --port 8000
     if ($LASTEXITCODE -ne 0) {
         throw "The local API process exited with code $LASTEXITCODE."
     }

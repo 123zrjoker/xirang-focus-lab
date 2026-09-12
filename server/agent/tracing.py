@@ -8,13 +8,21 @@ from uuid import uuid4
 from .contracts import TraceEvent, TraceKind
 
 
-_SENSITIVE_KEYS = ("api_key", "authorization", "credential", "password", "secret", "token")
+_SENSITIVE_KEYS = {
+    "api_key",
+    "authorization",
+    "credential",
+    "password",
+    "secret",
+    "access_token",
+    "refresh_token",
+}
 _MAX_TRACE_TEXT = 1_000
 
 
 def _redact(value: Any, key: str = "") -> Any:
     lowered = key.lower()
-    if any(marker in lowered for marker in _SENSITIVE_KEYS):
+    if lowered in _SENSITIVE_KEYS or lowered.endswith("_api_key") or lowered.endswith("_credential"):
         return "[REDACTED]"
     if isinstance(value, dict):
         return {str(item_key): _redact(item_value, str(item_key)) for item_key, item_value in value.items()}

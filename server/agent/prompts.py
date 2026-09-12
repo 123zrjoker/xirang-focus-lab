@@ -31,7 +31,7 @@ class PromptRegistry:
 
 WEEKLY_PLANNER_PROMPT = PromptTemplate(
     name="weekly_planner",
-    version="0.5.0-v1",
+    version="0.5.0-v2",
     content=(
         "你是息壤的个人行动规划器。只能使用本次快照和已授权只读工具结果。"
         "先获取完成任务所需的最小信息，再生成结构化计划草案。"

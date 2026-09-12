@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import { buildActionContextSnapshot, type ActionContextSnapshot } from '../lib/agentContext'
+import { runAgentPlan, type AgentRunResult } from '../lib/agentClient'
 import { listKnowledgeSources, type KnowledgeSource } from '../lib/knowledgeBase'
 import type { AppState } from '../types'
 
@@ -18,6 +19,8 @@ export function AgentContextPreview({ state }: AgentContextPreviewProps) {
   const [sources, setSources] = useState<KnowledgeSource[]>([])
   const [selectedSourceIds, setSelectedSourceIds] = useState<string[]>([])
   const [preview, setPreview] = useState<ActionContextSnapshot | null>(null)
+  const [result, setResult] = useState<AgentRunResult | null>(null)
+  const [running, setRunning] = useState(false)
   const [loadingSources, setLoadingSources] = useState(true)
   const [error, setError] = useState<string | null>(null)
 
@@ -50,6 +53,7 @@ export function AgentContextPreview({ state }: AgentContextPreviewProps) {
 
   async function createPreview() {
     setError(null)
+    setResult(null)
     try {
       setPreview(await buildActionContextSnapshot(state, request, {
         includeTodos,
@@ -61,6 +65,20 @@ export function AgentContextPreview({ state }: AgentContextPreviewProps) {
       }))
     } catch (previewError) {
       setError(previewError instanceof Error ? previewError.message : '无法生成行动上下文预览。')
+    }
+  }
+
+  async function generatePlan() {
+    if (!preview || running) return
+    setRunning(true)
+    setError(null)
+    setResult(null)
+    try {
+      setResult(await runAgentPlan(preview))
+    } catch (planError) {
+      setError(planError instanceof Error ? planError.message : '无法连接本地 Agent 服务。')
+    } finally {
+      setRunning(false)
     }
   }
 
@@ -156,7 +174,61 @@ export function AgentContextPreview({ state }: AgentContextPreviewProps) {
             <summary>查看将发送给本地 Agent 服务的完整 JSON</summary>
             <pre>{JSON.stringify(preview, null, 2)}</pre>
           </details>
-          <button type="button" disabled title="真实规划器将在下一步接入后启用">生成计划草案（下一步启用）</button>
+          <p className="agent-cost-note">继续后会调用已配置的 DeepSeek。规划通常包含“选择只读工具”和“生成草案”两次结构化请求，可能产生少量费用。</p>
+          <button className="agent-run-button" type="button" disabled={running} onClick={() => void generatePlan()}>
+            {running ? 'Agent 正在读取、规划并校验…' : '生成只读计划草案'}
+          </button>
+        </div>
+      )}
+
+      {result && (
+        <div className={`agent-plan-result ${result.status}`} aria-live="polite">
+          <div className="agent-plan-result-heading">
+            <div>
+              <small>{result.graphVersion}</small>
+              <h3>{result.planDraft?.title ?? '计划生成未完成'}</h3>
+              <p>{result.planDraft?.summary ?? result.validationErrors.join('；')}</p>
+            </div>
+            <span>{result.status === 'completed' ? '契约校验通过' : '已安全停止'}</span>
+          </div>
+
+          {result.planDraft && (
+            <ol className="agent-plan-items">
+              {result.planDraft.items.map((item, index) => (
+                <li key={`${item.title}-${index}`}>
+                  <div><span>{index + 1}</span><strong>{item.title}</strong><em>{item.estimatedMinutes} 分钟</em></div>
+                  <p><b>第一步</b>{item.firstStep}</p>
+                  <p><b>完成标准</b>{item.completionCriteria}</p>
+                  <small>{item.rationale}</small>
+                  {item.evidenceRefs.length > 0 && <code>依据 {item.evidenceRefs.join('、')}</code>}
+                </li>
+              ))}
+            </ol>
+          )}
+
+          {result.planDraft?.assumptions.length ? (
+            <div className="agent-plan-assumptions"><strong>假设与边界</strong><ul>{result.planDraft.assumptions.map((item) => <li key={item}>{item}</li>)}</ul></div>
+          ) : null}
+
+          {result.evidence.length > 0 && (
+            <details className="agent-plan-evidence">
+              <summary>查看 {result.evidence.length} 条规划依据</summary>
+              {result.evidence.map((item) => (
+                <article key={item.referenceId}>
+                  <span>{item.referenceId}</span>
+                  <div><strong>{item.sourceTitle}</strong><small>{item.heading || `第 ${item.startLine}–${item.endLine} 行`}</small><p>{item.content}</p></div>
+                </article>
+              ))}
+            </details>
+          )}
+
+          <div className="agent-tool-trace">
+            <span>只读工具轨迹</span>
+            {result.toolResults.length
+              ? result.toolResults.map((item) => <i key={item.callId} className={item.status}>{item.name} · {item.status}</i>)
+              : <i>本次未调用工具</i>}
+          </div>
+          <p className="agent-run-id">Run ID：{result.runId} · 当前版本没有保存或执行按钮。</p>
         </div>
       )}
     </section>
