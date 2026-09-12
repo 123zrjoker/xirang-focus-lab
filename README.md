@@ -1,5 +1,7 @@
 # 息壤 · 注意力训练与专注启动实验室
 
+0.5.0 将项目从“可评测 RAG 应用”推进为首个只读状态化 Agent：开发基线迁移到 Python 3.11，并锁定 LangGraph 及内存 Checkpointer；前端可按数据类别和知识来源构造、检查最小行动快照，再显式调用 DeepSeek。Agent 可从三个受权限策略约束的只读工具中选择所需信息，再生成最多 7 项、带第一步、完成标准、待办来源和知识证据引用的计划草案；服务端会严格校验模型结构、待办 ID 和证据白名单。当前版本没有保存计划、启动专注或其他业务写入能力，SQLite 恢复与人工批准留到 0.5.1。
+
 0.4.4 在本地混合检索之上增加平台无关的引用式 RAG 管线：固定上下文预算，为每条证据分配 `S1`～`S8` 可追溯引用，标记知识文档中的疑似提示注入，并严格校验生成结果只能引用本次提供的证据。设置页支持 Windows DPAPI 当前用户加密保存 DeepSeek Key，重启后自动加载，且浏览器和状态接口均不能读回明文。12 条真实 DeepSeek 固定评测覆盖正常回答、证据不足、冲突证据与提示注入，结构合法率、拒答准确率、引用正确率、确定性忠实度代理和注入抵抗率均为 100%；P50 为 10.816 秒，P95 为 13.214 秒。
 
 0.4.3 完成可真实运行、可消融评测的本地混合检索链路：BM25 与 `BAAI/bge-small-zh-v1.5` 分别召回前 20 条，使用 RRF 融合，再可选用本地量化多语言 Cross-Encoder 重排前 12 条。设置页可在关键词、向量、混合和重排四种模式间切换，并查看双路排名、向量相似度、RRF 分数、重排分数与名次变化。项目使用 15 份真实项目文档和 100 条人工标注查询，固定划分 20 条开发集与 80 条保留测试集；最终重排模式在保留集达到 Recall@1 0.4533、Recall@5 0.7933、MRR@5 0.5891、nDCG@5 0.6383、拒答准确率 1.0000。
@@ -53,7 +55,13 @@
 
 ## 本地运行
 
-需要 Node.js 20.19+ 或 22.12+、Python 3.9+。当前开发环境使用 Node.js 24 和 Python 3.9。
+需要 Node.js 20.19+ 或 22.12+、Python 3.11。当前开发环境使用 Node.js 24 和独立的 `.venv311`。
+
+首次配置后端环境：
+
+```bash
+npm run setup:api:py311
+```
 
 ```bash
 npm install
@@ -66,10 +74,10 @@ npm run dev:api
 npm run dev
 ```
 
-如果本机尚未安装检索服务依赖，先运行：
+如需手动安装后端依赖，请使用 Python 3.11 环境：
 
 ```bash
-python -m pip install -r server/requirements.txt
+.venv311\Scripts\python.exe -m pip install -r server/requirements-dev.txt
 ```
 
 首次使用向量与重排模式时下载固定版本的本地模型（约 230 MB）：
@@ -81,6 +89,8 @@ powershell -ExecutionPolicy Bypass -File scripts/download_retrieval_models.ps1
 引用式 RAG 的上下文预览无需 AI 平台或 API Key。项目已按 [DeepSeek 官方 API 文档](https://api-docs.deepseek.com/zh-cn/) 接好 `https://api.deepseek.com/chat/completions`、Bearer 鉴权和 JSON Output；默认模型为 `deepseek-v4-flash`，可通过环境变量更改。
 
 启动后端和网站后，在“设置 → DeepSeek 安全凭据”输入一次 Key。Key 由本机后端使用 Windows DPAPI 按当前 Windows 用户加密，明文不会进入源码、浏览器存储、应用数据备份或 API 响应；以后使用普通 `npm run dev:api` 启动即可自动读取。只有主动替换或删除时才需要再次操作。
+
+“今日”页的 Agent Foundation 会先在浏览器中显示完整发送前快照。只有点击“生成只读计划草案”后，快照才会发送给本机 FastAPI 服务并由已配置的 DeepSeek 规划；一次规划通常有“选择只读工具”和“生成草案”两轮结构化请求。结果只显示草案、依据、假设和工具轨迹，不提供保存或执行入口。
 
 以下入口仍可用于同时指定模型和 API 地址，但不会再要求终端重复输入 Key：
 
@@ -149,5 +159,6 @@ npm run desktop:dist
 - 在设置页确认清空设备数据时会同时清除知识库；清除浏览器站点数据也会清除训练记录与本地知识来源。
 - BM25 请求无状态；只有用户明确点击“构建本地索引”后，已授权文本块和 512 维向量才会保存到本机 Qdrant。语料变化会触发增量更新，用户可随时在实验台清除索引。
 - BGE Embedding、Qdrant 和多语言 Cross-Encoder 均在本机 CPU 运行；模型缺失时界面会说明并降级。只有用户明确点击“生成引用回答”后，本次问题与界面已预览的最小证据才会发送给 DeepSeek；本地构建、检索和预览不会出站。
+- Agent 只能读取本次快照明确授权的数据类别；知识检索还必须限定在本次逐项选中的来源 ID。DeepSeek Key、分心原始备注、个人笔记正文、已完成待办和训练逐题数据不会进入行动快照。
 - 当前分数是任务表现指数，不是医学诊断、人群百分位或“脑年龄”。
 - 网站不用于诊断或治疗 ADHD 等注意障碍。

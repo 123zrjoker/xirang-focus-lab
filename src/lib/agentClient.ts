@@ -5,7 +5,7 @@ export interface AgentFoundationStatus {
   mode: 'read_only'
   available: boolean
   provider: string
-  model?: string
+  model: string | null
   tools: string[]
 }
 
@@ -45,7 +45,7 @@ export interface AgentToolResult {
   name: string
   status: 'success' | 'denied' | 'error'
   output: Record<string, unknown>
-  error?: string
+  error: string | null
   durationMs: number
 }
 
@@ -55,7 +55,7 @@ export interface AgentTraceEvent {
   sequence: number
   createdAt: string
   kind: string
-  node?: string
+  node: string | null
   details: Record<string, unknown>
 }
 
@@ -65,7 +65,7 @@ export interface AgentRunResult {
   threadId: string
   runId: string
   status: 'created' | 'planning' | 'using_tools' | 'validating' | 'completed' | 'failed'
-  planDraft?: AgentPlanDraft
+  planDraft: AgentPlanDraft | null
   evidence: AgentEvidenceItem[]
   toolResults: AgentToolResult[]
   validationErrors: string[]
