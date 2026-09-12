@@ -120,11 +120,20 @@ def hybrid_search(
     vector_threshold: float = HYBRID_VECTOR_THRESHOLD,
     keyword_score_threshold: float = HYBRID_KEYWORD_SCORE_THRESHOLD,
     keyword_coverage_threshold: float = HYBRID_KEYWORD_COVERAGE_THRESHOLD,
+    source_ids: Optional[Sequence[str]] = None,
 ) -> SearchOutput:
     started = time.perf_counter()
+    if source_ids is not None:
+        allowed_source_ids = set(source_ids)
+        chunks = [chunk for chunk in chunks if chunk.source_id in allowed_source_ids]
     candidate_k = min(CANDIDATE_K, max(top_k, len(chunks)))
     keyword_output = search_chunks(query, chunks, candidate_k)
-    vector_output = vector_index.search(query, candidate_k, apply_threshold=False)
+    vector_output = vector_index.search(
+        query,
+        candidate_k,
+        apply_threshold=False,
+        source_ids=source_ids,
+    )
     keyword_by_id = {item.chunk.id: (rank, item) for rank, item in enumerate(keyword_output.results, 1)}
     vector_by_id = {item.chunk.id: (rank, item) for rank, item in enumerate(vector_output.results, 1)}
     identifiers = set(keyword_by_id) | set(vector_by_id)

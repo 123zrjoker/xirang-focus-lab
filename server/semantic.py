@@ -341,15 +341,48 @@ class LocalVectorIndex:
     def chunks(self) -> list[RetrievalChunk]:
         return [_chunk_from_payload(point.payload) for point in self._all_points() if point.payload]
 
-    def search(self, query: str, top_k: int = 5, *, apply_threshold: bool = True) -> SearchOutput:
+    def search(
+        self,
+        query: str,
+        top_k: int = 5,
+        *,
+        apply_threshold: bool = True,
+        source_ids: Optional[Sequence[str]] = None,
+    ) -> SearchOutput:
         started = time.perf_counter()
         meta = self._read_meta()
         if not meta.get("fingerprint"):
             raise IndexNotReadyError("本地向量索引尚未构建。")
+        allowed_source_ids = set(source_ids) if source_ids is not None else None
+        corpus = self.chunks()
+        if allowed_source_ids is not None:
+            corpus = [chunk for chunk in corpus if chunk.source_id in allowed_source_ids]
+        if not corpus:
+            return SearchOutput(
+                query=query,
+                normalized_query=normalize_text(query),
+                query_terms=tokenize(query),
+                results=[],
+                duration_ms=round((time.perf_counter() - started) * 1_000, 3),
+                chunk_count=0,
+                source_count=0,
+                average_chunk_length=0.0,
+                confidence="none",
+                no_answer_reason="本次授权范围内没有可检索的知识片段。",
+            )
         query_vector = self.provider.encode_query(query)
+        query_filter = None
+        if allowed_source_ids is not None:
+            from qdrant_client import models
+
+            query_filter = models.Filter(must=[models.FieldCondition(
+                key="sourceId",
+                match=models.MatchAny(any=sorted(allowed_source_ids)),
+            )])
         response = self._qdrant().query_points(
             collection_name=COLLECTION_NAME,
             query=query_vector.tolist(),
+            query_filter=query_filter,
             limit=top_k,
             with_payload=True,
             with_vectors=False,
@@ -386,7 +419,6 @@ class LocalVectorIndex:
             no_answer_reason = None
         elif apply_threshold:
             ranked = []
-        corpus = self.chunks()
         average_length = sum(len(tokenize(chunk.content)) for chunk in corpus) / len(corpus) if corpus else 0.0
         return SearchOutput(
             query=query,

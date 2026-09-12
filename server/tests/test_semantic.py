@@ -81,6 +81,25 @@ def test_vector_search_returns_traceable_qdrant_payload() -> None:
     assert output.chunk_count == 2
 
 
+def test_vector_search_enforces_authorized_source_filter() -> None:
+    index = LocalVectorIndex(provider=FakeEmbeddingProvider(), memory=True)
+    index.sync([
+        chunk("focus", "专注时减少手机分心，把设备放远。"),
+        chunk("pdf", "文字型 PDF 可以读取文字层和页码。"),
+    ])
+
+    output = index.search(
+        "专注时减少手机分心，把设备放远。",
+        top_k=2,
+        apply_threshold=False,
+        source_ids=["source-pdf"],
+    )
+
+    assert [item.chunk.source_id for item in output.results] == ["source-pdf"]
+    assert output.source_count == 1
+    assert output.chunk_count == 1
+
+
 def test_vector_api_exposes_index_metadata_and_clear(monkeypatch) -> None:
     index = LocalVectorIndex(provider=FakeEmbeddingProvider(), memory=True)
     monkeypatch.setattr(main_module, "semantic_index", index)
