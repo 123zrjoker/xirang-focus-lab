@@ -2,6 +2,7 @@ import { getStreak, isSameLocalDay, taskLabel } from '../lib/metrics'
 import { getRetestStatus } from '../lib/assessment'
 import type { AppState, DailyPlan, DailyPlanMode, LaunchMode, Page, TaskType } from '../types'
 import { ProfileRadar } from '../components/ProfileRadar'
+import { AgentContextPreview } from '../components/AgentContextPreview'
 
 interface TodayPageProps {
   state: AppState
@@ -68,6 +69,8 @@ export function TodayPage({ state, plan, onNavigate, onStartTask, onStartFocus, 
         </span>
         <span className="today-notes-action">打开便签 <i>→</i></span>
       </button>
+
+      <AgentContextPreview state={state} />
 
       <div className="plan-mode-bar" aria-label="调整今日计划">
         <div><span>调整今天</span><small>切换后会重新生成今天的任务</small></div>
