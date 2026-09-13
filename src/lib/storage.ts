@@ -1,6 +1,7 @@
 import type {
   ActionSlip,
   ActionSlipStatus,
+  AgentSavedPlan,
   ActiveFocusSession,
   ActiveFocusStatus,
   AssessmentContext,
@@ -37,7 +38,7 @@ import type {
 } from '../types'
 import { createTaskAdaptationState } from './adaptiveDifficulty'
 
-export const CURRENT_SCHEMA_VERSION = 10
+export const CURRENT_SCHEMA_VERSION = 11
 
 const STORAGE_KEY = 'xirang-state'
 const ACTIVE_FOCUS_KEY = 'xirang-active-focus-v1'
@@ -96,6 +97,7 @@ export function createDefaultState(): AppState {
     focusLaunches: [],
     actionSlips: [],
     personalNotes: [],
+    agentPlans: [],
   }
 }
 
@@ -433,6 +435,46 @@ function parseDailyPlan(value: unknown): DailyPlan | null {
   }
 }
 
+function parseAgentSavedPlan(value: unknown): AgentSavedPlan | null {
+  if (!isRecord(value) || typeof value.id !== 'string' || typeof value.threadId !== 'string'
+    || typeof value.runId !== 'string' || typeof value.title !== 'string' || typeof value.summary !== 'string'
+    || typeof value.baseStateRevision !== 'string' || !Array.isArray(value.items)) return null
+  const items = value.items.flatMap((item) => {
+    if (!isRecord(item) || typeof item.title !== 'string' || typeof item.firstStep !== 'string'
+      || typeof item.completionCriteria !== 'string' || typeof item.rationale !== 'string') return []
+    return [{
+      title: item.title.slice(0, 240),
+      firstStep: item.firstStep.slice(0, 300),
+      completionCriteria: item.completionCriteria.slice(0, 400),
+      estimatedMinutes: clamp(Math.round(finiteNumber(item.estimatedMinutes, 25)), 5, 240),
+      rationale: item.rationale.slice(0, 500),
+      sourceActionSlipIds: Array.isArray(item.sourceActionSlipIds)
+        ? item.sourceActionSlipIds.filter((id): id is string => typeof id === 'string').slice(0, 10)
+        : [],
+      evidenceRefs: Array.isArray(item.evidenceRefs)
+        ? item.evidenceRefs.filter((id): id is string => typeof id === 'string').slice(0, 8)
+        : [],
+    }]
+  }).slice(0, 7)
+  if (!items.length) return null
+  return {
+    id: value.id.slice(0, 100),
+    threadId: value.threadId.slice(0, 100),
+    runId: value.runId.slice(0, 100),
+    createdAt: validDate(value.createdAt),
+    baseStateRevision: value.baseStateRevision.slice(0, 128),
+    title: value.title.slice(0, 120),
+    summary: value.summary.slice(0, 1_000),
+    items,
+    assumptions: Array.isArray(value.assumptions)
+      ? value.assumptions.filter((item): item is string => typeof item === 'string').slice(0, 10)
+      : [],
+    evidenceRefs: Array.isArray(value.evidenceRefs)
+      ? value.evidenceRefs.filter((item): item is string => typeof item === 'string').slice(0, 8)
+      : [],
+  }
+}
+
 function parseAdaptationState(value: unknown): TaskAdaptationState {
   const defaults = createTaskAdaptationState()
   if (!isRecord(value)) return defaults
@@ -476,6 +518,9 @@ export function migrateState(value: unknown): AppState {
     : []
   const personalNotes = Array.isArray(value.personalNotes)
     ? value.personalNotes.map(parsePersonalNote).filter((item): item is PersonalNote => item !== null).slice(-300)
+    : []
+  const agentPlans = Array.isArray(value.agentPlans)
+    ? value.agentPlans.map(parseAgentSavedPlan).filter((item): item is AgentSavedPlan => item !== null).slice(-50)
     : []
   const legacyLaterTasks = Array.isArray(value.laterTasks)
     ? value.laterTasks.map(parseLegacyLaterTask).filter((item): item is ActionSlip => item !== null).slice(-20)
@@ -569,6 +614,7 @@ export function migrateState(value: unknown): AppState {
     focusLaunches,
     actionSlips,
     personalNotes,
+    agentPlans,
   }
 }
 

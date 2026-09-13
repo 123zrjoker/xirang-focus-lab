@@ -3,6 +3,8 @@ import { getRetestStatus } from '../lib/assessment'
 import type { AppState, DailyPlan, DailyPlanMode, LaunchMode, Page, TaskType } from '../types'
 import { ProfileRadar } from '../components/ProfileRadar'
 import { AgentContextPreview } from '../components/AgentContextPreview'
+import type { AgentExecutionAck, AgentMutationIntent } from '../lib/agentClient'
+import type { AgentFocusRequest } from '../lib/agentMutations'
 
 interface TodayPageProps {
   state: AppState
@@ -12,9 +14,14 @@ interface TodayPageProps {
   onStartFocus: (minutes: number) => void
   onStartLaunch: (mode: LaunchMode) => void
   onChangePlanMode: (mode: DailyPlanMode) => void
+  onExecuteAgentMutations: (intents: AgentMutationIntent[]) => Promise<{
+    executionAck: AgentExecutionAck
+    focusRequest?: AgentFocusRequest
+  }>
+  onStartApprovedAgentFocus: (request: AgentFocusRequest) => void
 }
 
-export function TodayPage({ state, plan, onNavigate, onStartTask, onStartFocus, onStartLaunch, onChangePlanMode }: TodayPageProps) {
+export function TodayPage({ state, plan, onNavigate, onStartTask, onStartFocus, onStartLaunch, onChangePlanMode, onExecuteAgentMutations, onStartApprovedAgentFocus }: TodayPageProps) {
   const todaySessions = state.sessions.filter((item) => isSameLocalDay(item.completedAt))
   const todayFocus = state.focusSessions.filter((item) => isSameLocalDay(item.completedAt))
   const completedTypes = new Set(todaySessions.map((item) => item.taskType))
@@ -70,7 +77,11 @@ export function TodayPage({ state, plan, onNavigate, onStartTask, onStartFocus, 
         <span className="today-notes-action">打开便签 <i>→</i></span>
       </button>
 
-      <AgentContextPreview state={state} />
+      <AgentContextPreview
+        state={state}
+        onExecuteMutations={onExecuteAgentMutations}
+        onStartApprovedFocus={onStartApprovedAgentFocus}
+      />
 
       <div className="plan-mode-bar" aria-label="调整今日计划">
         <div><span>调整今天</span><small>切换后会重新生成今天的任务</small></div>

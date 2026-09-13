@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { AppShell } from './components/AppShell'
 import { AssessmentPage } from './pages/AssessmentPage'
 import { FocusPage } from './pages/FocusPage'
@@ -9,7 +9,7 @@ import { ProgressPage } from './pages/ProgressPage'
 import { SettingsPage } from './pages/SettingsPage'
 import { TodayPage } from './pages/TodayPage'
 import { TrainingPage } from './pages/TrainingPage'
-import { clearActiveFocus, clearActiveLaunch, clearStoredState, createDefaultState, loadActiveFocus, loadActiveLaunch, loadState, saveActiveLaunch, saveState, toTrainingSession } from './lib/storage'
+import { clearActiveFocus, clearActiveLaunch, clearStoredState, createDefaultState, loadActiveFocus, loadActiveLaunch, loadState, saveActiveFocus, saveActiveLaunch, saveState, toTrainingSession } from './lib/storage'
 import { playCompletionSound } from './lib/feedback'
 import { buildDailyPlan, getTodayPlan } from './lib/planner'
 import { evaluateAdaptiveDifficulty } from './lib/adaptiveDifficulty'
@@ -18,6 +18,9 @@ import { createLaunchDraft, toFocusLaunchContext } from './lib/launchFlow'
 import { attachFocusToActionSlips, completeActionSlip, createActionSlip, MAX_ACTION_SLIPS, reopenActionSlip, setCurrentActionSlip, updateActionSlipTitle } from './lib/actionSlips'
 import { createPersonalNote, MAX_PERSONAL_NOTES, updatePersonalNote } from './lib/personalNotes'
 import { clearKnowledgeBase, deleteKnowledgeSourcesForNote } from './lib/knowledgeBase'
+import { applyAgentMutationIntents, createApprovedFocusSession, loadAgentActionLedger, saveAgentActionLedger, type AgentFocusRequest } from './lib/agentMutations'
+import { calculateActionStateRevision } from './lib/agentContext'
+import type { AgentExecutionAck, AgentMutationIntent } from './lib/agentClient'
 import type {
   ActionSlip,
   AppSettings,
@@ -51,6 +54,9 @@ export default function App() {
   const [selectedActionSlipId, setSelectedActionSlipId] = useState<string | null>(null)
   const [activeLaunch, setActiveLaunch] = useState<FocusLaunchSession | null>(() => loadActiveLaunch())
   const [assessmentMode, setAssessmentMode] = useState<'baseline' | 'retest'>(() => state.profile.onboardingComplete ? 'retest' : 'baseline')
+  const stateRef = useRef(state)
+
+  useEffect(() => { stateRef.current = state }, [state])
 
   useEffect(() => saveState(state), [state])
 
@@ -292,6 +298,105 @@ export default function App() {
     })
   }
 
+  async function executeAgentMutations(intents: AgentMutationIntent[]): Promise<{
+    executionAck: AgentExecutionAck
+    focusRequest?: AgentFocusRequest
+  }> {
+    const sourceState = stateRef.current
+    const sourceActiveFocus = loadActiveFocus()
+    const batch = await applyAgentMutationIntents(
+      sourceState,
+      intents,
+      loadAgentActionLedger(),
+      new Date(),
+      sourceActiveFocus?.id ?? null,
+    )
+    if (stateRef.current !== sourceState) {
+      const observedStateRevision = await calculateActionStateRevision(stateRef.current)
+      return {
+        executionAck: {
+          observedStateRevision,
+          items: intents.map((intent) => ({
+            actionId: intent.actionId,
+            status: 'failed',
+            error: '本地状态在执行校验期间发生变化，请重新生成计划。',
+          })),
+        },
+      }
+    }
+    const focusRequest = batch.focusRequests[0]
+    const appliedFocusRequest = batch.focusRequests.find((request) =>
+      batch.executionAck.items.some((item) => item.actionId === request.actionId && item.status === 'applied'))
+    const latestActiveFocus = loadActiveFocus()
+    if (appliedFocusRequest && latestActiveFocus?.id !== sourceActiveFocus?.id) {
+      return {
+        executionAck: {
+          observedStateRevision: batch.executionAck.observedStateRevision,
+          items: intents.map((intent) => ({
+            actionId: intent.actionId,
+            status: 'failed',
+            error: '执行前检测到另一个专注会话，请重新生成计划。',
+          })),
+        },
+      }
+    }
+    let nextState = batch.nextState
+    if (appliedFocusRequest?.actionSlipId) {
+      nextState = {
+        ...nextState,
+        actionSlips: setCurrentActionSlip(nextState.actionSlips, appliedFocusRequest.actionSlipId),
+      }
+    }
+    if (appliedFocusRequest) {
+      const focusSession = createApprovedFocusSession(appliedFocusRequest)
+      saveActiveFocus(focusSession)
+      if (loadActiveFocus()?.id !== focusSession.id) {
+        return {
+          executionAck: {
+            observedStateRevision: batch.executionAck.observedStateRevision,
+            items: intents.map((intent) => ({
+              actionId: intent.actionId,
+              status: 'failed',
+              error: '无法持久保存专注会话，未提交本次操作。',
+            })),
+          },
+        }
+      }
+    }
+    saveState(nextState)
+    const newPlanIds = batch.executionAck.items
+      .filter((item) => item.status === 'applied')
+      .map((item) => item.actionId)
+      .filter((actionId) => intents.some((intent) => intent.actionId === actionId && intent.toolName === 'save_plan'))
+    const persistedPlanIds = new Set(loadState().agentPlans.map((plan) => plan.id))
+    if (newPlanIds.some((actionId) => !persistedPlanIds.has(actionId))) {
+      if (appliedFocusRequest) clearActiveFocus()
+      return {
+        executionAck: {
+          observedStateRevision: batch.executionAck.observedStateRevision,
+          items: intents.map((intent) => ({
+            actionId: intent.actionId,
+            status: 'failed',
+            error: '无法持久保存计划，未提交本次操作。',
+          })),
+        },
+      }
+    }
+    stateRef.current = nextState
+    setState(nextState)
+    saveAgentActionLedger(batch.appliedActionIds)
+    return { executionAck: batch.executionAck, ...(focusRequest ? { focusRequest } : {}) }
+  }
+
+  function startApprovedAgentFocus(request: AgentFocusRequest) {
+    setSelectedFocusMinutes(request.minutes)
+    setSelectedFocusTask(request.taskName)
+    setSelectedActionSlipId(request.actionSlipId ?? null)
+    window.location.hash = '/focus'
+    setPage('focus')
+    window.scrollTo({ top: 0, behavior: 'smooth' })
+  }
+
   const todayPlan = getTodayPlan(state) ?? buildDailyPlan(state)
   const retestStatus = getRetestStatus(state.assessments ?? [], state.sessions)
   const todayFocusMinutes = Math.round(state.focusSessions
@@ -319,6 +424,8 @@ export default function App() {
       onStartFocus={startSuggestedFocus}
       onStartLaunch={createLaunch}
       onChangePlanMode={changeTodayPlan}
+      onExecuteAgentMutations={executeAgentMutations}
+      onStartApprovedAgentFocus={startApprovedAgentFocus}
     />
   )
   else if (page === 'notes') content = (

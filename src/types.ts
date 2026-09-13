@@ -165,6 +165,29 @@ export interface DailyPlan {
   summary: string
 }
 
+export interface AgentSavedPlanItem {
+  title: string
+  firstStep: string
+  completionCriteria: string
+  estimatedMinutes: number
+  rationale: string
+  sourceActionSlipIds: string[]
+  evidenceRefs: string[]
+}
+
+export interface AgentSavedPlan {
+  id: string
+  threadId: string
+  runId: string
+  createdAt: string
+  baseStateRevision: string
+  title: string
+  summary: string
+  items: AgentSavedPlanItem[]
+  assumptions: string[]
+  evidenceRefs: string[]
+}
+
 export interface TaskResult {
   taskType: TaskType
   durationSec: number
@@ -278,4 +301,5 @@ export interface AppState {
   focusLaunches: FocusLaunchSession[]
   actionSlips: ActionSlip[]
   personalNotes: PersonalNote[]
+  agentPlans: AgentSavedPlan[]
 }

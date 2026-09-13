@@ -1,5 +1,11 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { getAgentFoundationStatus, runAgentPlan } from '../src/lib/agentClient'
+import {
+  getAgentFoundationStatus,
+  runAgentPlan,
+  streamAgentExecutionAck,
+  streamAgentPlan,
+  streamAgentResume,
+} from '../src/lib/agentClient'
 import type { ActionContextSnapshot } from '../src/lib/agentContext'
 
 const context: ActionContextSnapshot = {
@@ -25,33 +31,34 @@ afterEach(() => {
 })
 
 describe('agent client', () => {
-  it('reads the read-only foundation status', async () => {
+  it('reads the durable stateful foundation status', async () => {
     const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify({
-      graphVersion: '0.5.0-read-only-v1', mode: 'read_only', available: true,
-      provider: 'deepseek', model: 'deepseek-v4-flash', tools: ['query_todos'],
+      graphVersion: '0.5.1-stateful-v1', mode: 'stateful_approval', available: true,
+      provider: 'deepseek', model: 'deepseek-v4-flash', tools: ['query_todos'], durable: true,
     }), { status: 200, headers: { 'Content-Type': 'application/json' } }))
     vi.stubGlobal('fetch', fetchMock)
 
-    await expect(getAgentFoundationStatus()).resolves.toMatchObject({ mode: 'read_only', available: true })
+    await expect(getAgentFoundationStatus()).resolves.toMatchObject({ mode: 'stateful_approval', available: true, durable: true })
     expect(fetchMock).toHaveBeenCalledWith('/api/agent/status', expect.objectContaining({ signal: expect.any(AbortSignal) }))
   })
 
   it('sends the exact previewed snapshot without credentials', async () => {
     const response = {
-      schemaVersion: 1, graphVersion: '0.5.0-read-only-v1', threadId: 'thread-client', runId: 'run-client',
-      status: 'completed', planDraft: {
+      schemaVersion: 1, graphVersion: '0.5.1-stateful-v1', threadId: 'thread-client', runId: 'run-client',
+      status: 'awaiting_approval', planDraft: {
         title: '计划', summary: '只读草案', items: [{
           title: '任务', firstStep: '开始', completionCriteria: '完成', estimatedMinutes: 25,
           rationale: '请求', sourceActionSlipIds: [], evidenceRefs: [],
         }], assumptions: [], evidenceRefs: [],
-      }, evidence: [], toolResults: [], validationErrors: [], trace: [],
+      }, evidence: [], toolResults: [], validationErrors: [], approvalDecision: null,
+      mutationIntents: [], executionAck: null, trace: [],
     }
     const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify(response), {
       status: 200, headers: { 'Content-Type': 'application/json' },
     }))
     vi.stubGlobal('fetch', fetchMock)
 
-    await expect(runAgentPlan(context, 'thread-client')).resolves.toMatchObject({ status: 'completed' })
+    await expect(runAgentPlan(context, 'thread-client')).resolves.toMatchObject({ status: 'awaiting_approval' })
     const [url, options] = fetchMock.mock.calls[0]
     expect(url).toBe('/api/agent/plan')
     expect(options.method).toBe('POST')
@@ -66,5 +73,51 @@ describe('agent client', () => {
     }), { status: 503, headers: { 'Content-Type': 'application/json' } })))
 
     await expect(runAgentPlan(context, 'thread-client')).rejects.toThrow('DeepSeek 尚未配置')
+  })
+
+  it('parses progress and the approval interrupt result from an SSE stream', async () => {
+    const result = {
+      schemaVersion: 1, graphVersion: '0.5.1-stateful-v1', threadId: 'thread-stream', runId: 'run-stream',
+      status: 'awaiting_approval', planDraft: null, evidence: [], toolResults: [], validationErrors: [],
+      approvalDecision: null, mutationIntents: [], executionAck: null, trace: [],
+    }
+    const body = [
+      'event: progress\ndata: {"node":"planner","status":"planning","label":"正在生成计划草案"}\n\n',
+      `event: result\ndata: ${JSON.stringify(result)}\n\n`,
+    ].join('')
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response(body, {
+      status: 200, headers: { 'Content-Type': 'text/event-stream' },
+    })))
+    const progress: string[] = []
+
+    await expect(streamAgentPlan(context, 'thread-stream', (event) => progress.push(event.node)))
+      .resolves.toMatchObject({ status: 'awaiting_approval', threadId: 'thread-stream' })
+    expect(progress).toEqual(['planner'])
+  })
+
+  it('streams approval resume and execution acknowledgement with exact payloads', async () => {
+    const result = {
+      schemaVersion: 1, graphVersion: '0.5.1-stateful-v1', threadId: 'thread-stream', runId: 'run-stream',
+      status: 'completed', planDraft: null, evidence: [], toolResults: [], validationErrors: [],
+      approvalDecision: null, mutationIntents: [], executionAck: null, trace: [],
+    }
+    const fetchMock = vi.fn().mockImplementation(() => Promise.resolve(new Response(
+      `event: progress\ndata: {"node":"transition","status":"running","label":"处理中"}\n\nevent: result\ndata: ${JSON.stringify(result)}\n\n`,
+      { status: 200, headers: { 'Content-Type': 'text/event-stream' } },
+    )))
+    vi.stubGlobal('fetch', fetchMock)
+    const decision = { decision: 'approve' as const, operations: ['save_plan' as const] }
+    const ack = {
+      observedStateRevision: 'A'.repeat(64),
+      items: [{ actionId: 'agent-action-1', status: 'applied' as const }],
+    }
+
+    await streamAgentResume('thread-stream', decision, () => undefined)
+    await streamAgentExecutionAck('thread-stream', ack, () => undefined)
+
+    expect(fetchMock.mock.calls[0][0]).toBe('/api/agent/threads/thread-stream/resume/stream')
+    expect(JSON.parse(fetchMock.mock.calls[0][1].body)).toEqual({ decision })
+    expect(fetchMock.mock.calls[1][0]).toBe('/api/agent/threads/thread-stream/ack/stream')
+    expect(JSON.parse(fetchMock.mock.calls[1][1].body)).toEqual({ executionAck: ack })
   })
 })

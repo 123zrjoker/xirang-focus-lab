@@ -142,7 +142,12 @@ function revisionMaterial(state: AppState) {
     actionSlips: state.actionSlips,
     dailyPlans: state.dailyPlans,
     focusSessions: state.focusSessions,
+    agentPlans: state.agentPlans,
   }
+}
+
+export function calculateActionStateRevision(state: AppState) {
+  return sha256(revisionMaterial(state))
 }
 
 export async function buildActionContextSnapshot(
@@ -200,7 +205,7 @@ export async function buildActionContextSnapshot(
     snapshotId: options.snapshotId ?? crypto.randomUUID(),
     createdAt: now.toISOString(),
     timezone: options.timezone ?? (Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC'),
-    baseStateRevision: await sha256(revisionMaterial(state)),
+    baseStateRevision: await calculateActionStateRevision(state),
     userRequest,
     goalAndPreferences: {
       goal: state.profile.goal,

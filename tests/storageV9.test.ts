@@ -3,7 +3,7 @@ import { clearActiveLaunch, CURRENT_SCHEMA_VERSION, createDefaultState, loadActi
 
 afterEach(() => vi.unstubAllGlobals())
 
-describe('storage migration through v10', () => {
+describe('storage migration through v11', () => {
   it('adds action slips without losing v8 focus data', () => {
     const migrated = migrateState({
       schemaVersion: 8,
@@ -38,6 +38,30 @@ describe('storage migration through v10', () => {
 
     expect(migrated.schemaVersion).toBe(CURRENT_SCHEMA_VERSION)
     expect(migrated.personalNotes[0]).toMatchObject({ title: '复盘 想法', content: '第一行\n第二行' })
+  })
+
+  it('migrates and bounds approved agent plans in v11', () => {
+    const base = createDefaultState()
+    const migrated = migrateState({
+      ...base,
+      schemaVersion: 10,
+      agentPlans: [{
+        id: 'save-action-1', threadId: 'thread-1', runId: 'run-1',
+        createdAt: '2026-09-13T08:00:00.000Z', baseStateRevision: 'A'.repeat(64),
+        title: '  已批准计划  ', summary: '执行摘要', assumptions: ['本机可用'], evidenceRefs: [],
+        items: [{
+          title: '第一项', firstStep: '打开文件', completionCriteria: '测试通过',
+          estimatedMinutes: 999, rationale: '验证保存', sourceActionSlipIds: [], evidenceRefs: [],
+        }],
+      }],
+    })
+
+    expect(migrated.schemaVersion).toBe(CURRENT_SCHEMA_VERSION)
+    expect(migrated.agentPlans).toHaveLength(1)
+    expect(migrated.agentPlans[0]).toMatchObject({
+      id: 'save-action-1', threadId: 'thread-1', title: '  已批准计划  ',
+    })
+    expect(migrated.agentPlans[0].items[0].estimatedMinutes).toBe(240)
   })
 
   it('migrates legacy later tasks into the unified action inbox', () => {

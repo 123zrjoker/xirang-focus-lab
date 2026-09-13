@@ -51,9 +51,9 @@ app.whenReady().then(async () => {
     state.profile.preferredFocusMinutes = 25
     state.actionSlips = [
       {
-        id: 'agent-current', title: '完成 0.5.0 Agent 契约', status: 'current',
+        id: 'agent-current', title: '完成 0.5.1 状态恢复', status: 'current',
         createdAt: '2026-09-10T08:00:00.000Z', updatedAt: '2026-09-12T08:00:00.000Z',
-        nextStep: '先跑通只读状态图测试', focusSessionIds: []
+        nextStep: '先跑通持久中断与恢复测试', focusSessionIds: []
       },
       {
         id: 'agent-inbox', title: '整理周计划演示数据', status: 'inbox',
@@ -81,7 +81,7 @@ app.whenReady().then(async () => {
     json: document.querySelector('.agent-snapshot-preview pre')?.innerText || '',
     overflow: document.documentElement.scrollWidth > document.documentElement.clientWidth,
   }))()`)
-  if (!result.text.includes('完成 0.5.0 Agent 契约') || !result.text.includes('状态修订号')) {
+  if (!result.text.includes('完成 0.5.1 状态恢复') || !result.text.includes('状态修订号')) {
     throw new Error(`快照预览内容不完整：${result.text}`)
   }
   if (result.json.includes('这段原始分心备注不能进入快照')) {
@@ -89,82 +89,182 @@ app.whenReady().then(async () => {
   }
   if (result.overflow) throw new Error('桌面端行动上下文卡片出现横向溢出')
 
-  currentStep = '使用模拟只读结果生成计划'
+  currentStep = '使用模拟 SSE 生成等待审批的计划'
   await window.webContents.executeJavaScript(`(() => {
     const originalFetch = window.fetch.bind(window)
     const previewedSnapshot = JSON.parse(document.querySelector('.agent-snapshot-preview pre').textContent)
-    window.fetch = async (input, init) => {
-      if (String(input) !== '/api/agent/plan') return originalFetch(input, init)
-      const body = JSON.parse(init.body)
-      if (JSON.stringify(body.context) !== JSON.stringify(previewedSnapshot)) {
-        throw new Error('发送的快照与预览不一致')
-      }
-      return new Response(JSON.stringify({
-        schemaVersion: 1,
-        graphVersion: '0.5.0-read-only-v1',
-        threadId: 'qa-thread-agent-context',
-        runId: 'qa-run-agent-context',
-        status: 'completed',
-        planDraft: {
-          title: '未来 7 天行动计划',
-          summary: '根据本次明确授权的未完成待办与专注摘要生成；这是只读草案。',
-          items: [
-            {
-              title: '完成 Agent 核心契约', firstStep: '补齐接口测试并运行回归。',
-              completionCriteria: '新增测试通过且没有破坏既有行为。', estimatedMinutes: 30,
-              rationale: '来自当前待办与明确记录的下一步。', sourceActionSlipIds: ['agent-current'], evidenceRefs: []
-            },
-            {
-              title: '整理周计划演示数据', firstStep: '准备一组不含私人正文的合成待办。',
-              completionCriteria: '演示数据能覆盖工具选择与计划生成。', estimatedMinutes: 25,
-              rationale: '来自本次授权的收件箱待办。', sourceActionSlipIds: ['agent-inbox'], evidenceRefs: []
-            },
-            {
-              title: '做一次移动端复查', firstStep: '以 430 像素宽度检查结果卡片。',
-              completionCriteria: '页面没有横向溢出，计划信息可完整阅读。', estimatedMinutes: 15,
-              rationale: '用于验证当前只读结果界面。', sourceActionSlipIds: [], evidenceRefs: []
-            }
-          ],
-          assumptions: ['当前版本不会保存计划或修改待办。'],
-          evidenceRefs: []
+    const initialPlan = {
+      title: '未来 7 天行动计划',
+      summary: '根据本次明确授权的未完成待办与专注摘要生成；批准前不会写入。',
+      items: [
+        {
+          title: '完成 Agent 状态恢复', firstStep: '补齐重启恢复测试并运行回归。',
+          completionCriteria: '重启服务后仍能恢复审批状态。', estimatedMinutes: 30,
+          rationale: '来自当前待办与明确记录的下一步。', sourceActionSlipIds: ['agent-current'], evidenceRefs: []
         },
-        evidence: [],
-        toolResults: [
-          { callId: 'qa-todos', name: 'query_todos', status: 'success', output: {}, error: null, durationMs: 1 },
-          { callId: 'qa-focus', name: 'query_focus_summary', status: 'success', output: {}, error: null, durationMs: 1 }
-        ],
-        validationErrors: [],
-        trace: []
-      }), { status: 200, headers: { 'Content-Type': 'application/json' } })
+        {
+          title: '整理周计划演示数据', firstStep: '准备一组不含私人正文的合成待办。',
+          completionCriteria: '演示数据能覆盖审批与幂等写入。', estimatedMinutes: 25,
+          rationale: '来自本次授权的收件箱待办。', sourceActionSlipIds: ['agent-inbox'], evidenceRefs: []
+        },
+        {
+          title: '做一次移动端复查', firstStep: '以 430 像素宽度检查批准面板。',
+          completionCriteria: '页面没有横向溢出，按钮可完整操作。', estimatedMinutes: 15,
+          rationale: '用于验证当前批准结果界面。', sourceActionSlipIds: [], evidenceRefs: []
+        }
+      ],
+      assumptions: ['只有明确批准的操作才会写入本机。'],
+      evidenceRefs: []
+    }
+    let approvedPlan = initialPlan
+    const result = (threadId, status, extra = {}) => ({
+      schemaVersion: 1,
+      graphVersion: '0.5.1-stateful-v1',
+      threadId,
+      runId: 'qa-run-agent-context',
+      status,
+      planDraft: approvedPlan,
+      evidence: [],
+      toolResults: [
+        { callId: 'qa-todos', name: 'query_todos', status: 'success', output: {}, error: null, durationMs: 1 },
+        { callId: 'qa-focus', name: 'query_focus_summary', status: 'success', output: {}, error: null, durationMs: 1 }
+      ],
+      validationErrors: [],
+      approvalDecision: null,
+      mutationIntents: [],
+      executionAck: null,
+      trace: [],
+      ...extra,
+    })
+    window.fetch = async (input, init) => {
+      const url = String(input)
+      if (url === '/api/agent/plan/stream') {
+        const body = JSON.parse(init.body)
+        if (JSON.stringify(body.context) !== JSON.stringify(previewedSnapshot)) {
+          throw new Error('发送的快照与预览不一致')
+        }
+        const paused = result(body.threadId, 'awaiting_approval')
+        const stream = [
+          'event: progress\\ndata: {"node":"load_user_context","status":"planning","label":"正在校验本次行动快照"}\\n\\n',
+          'event: progress\\ndata: {"node":"planner","status":"planning","label":"DeepSeek 正在生成计划"}\\n\\n',
+          'event: progress\\ndata: {"node":"human_approval","status":"awaiting_approval","label":"等待你的批准、修改或拒绝"}\\n\\n',
+          'event: result\\ndata: ' + JSON.stringify(paused) + '\\n\\n'
+        ].join('')
+        return new Response(stream, { status: 200, headers: { 'Content-Type': 'text/event-stream' } })
+      }
+      if (url.endsWith('/resume/stream')) {
+        const body = JSON.parse(init.body)
+        if (body.decision.decision !== 'modify' || body.decision.modifiedPlan.items[0].title !== '完成恢复与审批验收'
+          || !body.decision.operations.includes('save_plan') || !body.decision.operations.includes('start_focus')) {
+          throw new Error('修改后的计划没有按契约提交')
+        }
+        approvedPlan = body.decision.modifiedPlan
+        const threadId = url.split('/')[4]
+        const intent = {
+          actionId: 'agent-qa-save-action-00000001', toolName: 'save_plan',
+          arguments: { threadId, runId: 'qa-run-agent-context', plan: approvedPlan },
+          baseStateRevision: previewedSnapshot.baseStateRevision, riskLevel: 'commit', status: 'proposed'
+        }
+        const focusIntent = {
+          actionId: 'agent-qa-focus-action-0000001', toolName: 'start_focus',
+          arguments: {
+            taskName: approvedPlan.items[0].title, minutes: approvedPlan.items[0].estimatedMinutes,
+            firstStep: approvedPlan.items[0].firstStep,
+            completionCriteria: approvedPlan.items[0].completionCriteria,
+            actionSlipId: approvedPlan.items[0].sourceActionSlipIds[0]
+          },
+          baseStateRevision: previewedSnapshot.baseStateRevision, riskLevel: 'commit', status: 'proposed'
+        }
+        const resumed = result(threadId, 'awaiting_execution', {
+          approvalDecision: body.decision,
+          mutationIntents: [intent, focusIntent],
+        })
+        const stream = 'event: progress\\ndata: {"node":"build_mutation_intents","status":"awaiting_execution","label":"正在生成幂等写入意图"}\\n\\n'
+          + 'event: result\\ndata: ' + JSON.stringify(resumed) + '\\n\\n'
+        return new Response(stream, { status: 200, headers: { 'Content-Type': 'text/event-stream' } })
+      }
+      if (url.endsWith('/ack/stream')) {
+        const body = JSON.parse(init.body)
+        if (body.executionAck.items.length !== 2 || body.executionAck.items.some((item) => item.status !== 'applied')
+          || body.executionAck.observedStateRevision !== previewedSnapshot.baseStateRevision) {
+          throw new Error('本地执行确认不符合契约')
+        }
+        const threadId = url.split('/')[4]
+        const completed = result(threadId, 'completed', {
+          approvalDecision: { decision: 'modify', operations: ['save_plan', 'start_focus'], modifiedPlan: approvedPlan },
+          executionAck: body.executionAck,
+        })
+        const stream = 'event: progress\\ndata: {"node":"await_client_commit","status":"completed","label":"服务端已确认执行结果"}\\n\\n'
+          + 'event: result\\ndata: ' + JSON.stringify(completed) + '\\n\\n'
+        return new Response(stream, { status: 200, headers: { 'Content-Type': 'text/event-stream' } })
+      }
+      return originalFetch(input, init)
     }
   })()`)
   await window.webContents.executeJavaScript("document.querySelector('.agent-run-button').click()")
-  await waitFor(window, "document.querySelector('.agent-plan-result.completed')", '计划结果')
-  const planResult = await window.webContents.executeJavaScript(`(() => ({
-    text: document.querySelector('.agent-plan-result')?.innerText || '',
-    overflow: document.documentElement.scrollWidth > document.documentElement.clientWidth,
-  }))()`)
-  if (!planResult.text.includes('契约校验通过') || !planResult.text.includes('当前版本没有保存或执行按钮')) {
-    throw new Error(`计划结果内容不完整：${planResult.text}`)
+  await waitFor(window, "document.querySelector('.agent-plan-result.awaiting_approval')", '等待审批的计划结果')
+  const approvalText = await window.webContents.executeJavaScript("document.querySelector('.agent-approval-panel')?.innerText || ''")
+  if (!approvalText.includes('拒绝计划') || !approvalText.includes('修改计划') || !approvalText.includes('同意并执行')) {
+    throw new Error(`审批操作不完整：${approvalText}`)
   }
-  if (planResult.overflow) throw new Error('桌面端计划结果出现横向溢出')
+  await window.webContents.executeJavaScript("document.querySelectorAll('.agent-operation-options input')[1].click()")
+  await waitFor(window, "document.querySelectorAll('.agent-operation-options input')[1].checked", '勾选启动专注')
+  currentStep = '截取桌面端审批界面'
+  await window.webContents.executeJavaScript(`(() => {
+    document.documentElement.style.setProperty('scroll-behavior', 'auto', 'important')
+    document.body.style.setProperty('scroll-behavior', 'auto', 'important')
+    const target = document.querySelector('.agent-approval-panel')
+    window.scrollTo(0, target.getBoundingClientRect().top + window.scrollY - 100)
+  })()`)
+  await waitFor(window, 'window.scrollY > 500', '滚动到桌面端审批界面')
+  if (await window.webContents.executeJavaScript('document.documentElement.scrollWidth > document.documentElement.clientWidth')) {
+    throw new Error('桌面端审批界面出现横向溢出')
+  }
+  await capture(window, '0.5.1-agent-approval-desktop.png')
 
-  currentStep = '截取桌面端计划结果'
-  await window.webContents.executeJavaScript("document.documentElement.style.scrollBehavior = 'auto'; window.scrollTo(0, document.querySelector('.agent-plan-result').getBoundingClientRect().top + window.scrollY - 110)")
-  await pause(300)
-  await capture(window, '0.5.0-agent-plan-result-desktop.png')
+  currentStep = '修改并批准计划后保存到本机'
+  await window.webContents.executeJavaScript(`(() => {
+    const edit = [...document.querySelectorAll('.agent-approval-actions button')].find((button) => button.textContent.includes('修改计划'))
+    edit.click()
+  })()`)
+  await waitFor(window, "document.querySelector('.agent-plan-item-editor input')", '计划编辑器')
+  await window.webContents.executeJavaScript(`(() => {
+    const input = document.querySelector('.agent-plan-item-editor input')
+    const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set
+    setter.call(input, '完成恢复与审批验收')
+    input.dispatchEvent(new Event('input', { bubbles: true }))
+    const approve = [...document.querySelectorAll('.agent-approval-actions button')].find((button) => button.textContent.includes('批准修改版'))
+    approve.click()
+  })()`)
+  await waitFor(window, "document.querySelector('.focus-preparation') && localStorage.getItem('xirang-active-focus-v1')", '保存计划并启动专注')
+  const planResult = await window.webContents.executeJavaScript(`(() => {
+    const activeFocus = JSON.parse(localStorage.getItem('xirang-active-focus-v1'))
+    const savedState = JSON.parse(localStorage.getItem('xirang-state'))
+    return {
+    text: document.querySelector('.focus-preparation')?.innerText || '',
+    activeFocus,
+    savedPlan: savedState.agentPlans?.at(-1),
+    overflow: document.documentElement.scrollWidth > document.documentElement.clientWidth,
+    }
+  })()`)
+  if (!planResult.text.includes('完成恢复与审批验收') || planResult.activeFocus.status !== 'preparing'
+    || planResult.activeFocus.firstAction !== '补齐重启恢复测试并运行回归。'
+    || planResult.savedPlan.title !== '未来 7 天行动计划') {
+    throw new Error(`批准后的保存或专注启动不完整：${JSON.stringify(planResult)}`)
+  }
+  if (planResult.overflow) throw new Error('批准后的专注页面出现横向溢出')
 
   currentStep = '验证并截取移动端计划结果'
   window.setSize(430, 900)
   await pause(350)
-  await window.webContents.executeJavaScript("window.scrollTo(0, document.querySelector('.agent-plan-result').getBoundingClientRect().top + window.scrollY - 68)")
+  await window.webContents.executeJavaScript("window.scrollTo(0, 0)")
   await pause(300)
   if (await window.webContents.executeJavaScript('document.documentElement.scrollWidth > document.documentElement.clientWidth')) {
-    throw new Error('移动端计划结果出现横向溢出')
+    throw new Error('移动端批准后专注页面出现横向溢出')
   }
-  await capture(window, '0.5.0-agent-plan-result-mobile.png')
+  await capture(window, '0.5.1-agent-approved-focus-mobile.png')
 
-  console.log('0.5.0 行动上下文与只读计划结果验收通过')
+  console.log('0.5.1 持久审批、修改计划与幂等保存验收通过')
   await window.close()
   app.quit()
 }).catch((error) => {
