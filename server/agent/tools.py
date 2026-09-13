@@ -68,7 +68,7 @@ class ToolRegistry:
         if tool.definition.name in self._tools:
             raise ValueError(f"工具已注册：{tool.definition.name}")
         if tool.definition.risk_level != "read":
-            raise ValueError("0.5.0 Registry 只接受只读工具。")
+            raise ValueError("规划阶段 Registry 只接受只读工具。")
         self._tools[tool.definition.name] = tool
 
     def definitions(self) -> list[ToolDefinition]:

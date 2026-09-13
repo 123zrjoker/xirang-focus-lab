@@ -82,13 +82,13 @@ def test_read_only_graph_routes_tools_and_returns_valid_plan() -> None:
 
     result = harness.run(snapshot_payload(), "thread-read-only")
 
-    assert result.status == "completed"
+    assert result.status == "awaiting_approval"
     assert result.plan_draft is not None
     assert [item.source_action_slip_ids for item in result.plan_draft.items] == [["todo-1"], ["todo-2"]]
     assert {item.name for item in result.tool_results} == {"query_todos", "query_focus_summary"}
     assert all(item.status == "success" for item in result.tool_results)
     assert all(definition.risk_level == "read" for definition in harness.tools.definitions())
-    assert result.model_dump().get("mutation_intents") is None
+    assert result.mutation_intents == []
     permission_events = [event for event in result.trace if event.kind == "permission_decision"]
     assert len(permission_events) == 2
     assert all(event.details["allowed"] is True for event in permission_events)
@@ -145,7 +145,7 @@ def test_unapproved_knowledge_tool_is_denied_without_stopping_safe_plan() -> Non
     payload["sampleBoundaries"]["knowledgeSourceSelected"] = 1
     result = AgentHarness(planner=planner).run(payload, "thread-denied-knowledge")
 
-    assert result.status == "completed"
+    assert result.status == "awaiting_approval"
     assert len(result.tool_results) == 1
     assert result.tool_results[0].status == "denied"
     assert "未授权" in (result.tool_results[0].error or "")
@@ -154,11 +154,17 @@ def test_unapproved_knowledge_tool_is_denied_without_stopping_safe_plan() -> Non
 
 def test_stream_exposes_read_only_node_progress_in_order() -> None:
     updates = list(AgentHarness().stream(snapshot_payload(), "thread-stream-progress"))
-    node_names = [next(iter(update)) for update in updates]
+    node_names = [
+        next(iter(update["data"]))
+        for update in updates
+        if "__interrupt__" not in update["data"]
+    ]
 
-    assert node_names == ["load_user_context", "planner", "tool_router", "planner", "validator"]
-    assert updates[-1]["validator"]["status"] == "completed"
-    assert all("mutation_intents" not in update.get(node, {}) for update, node in zip(updates, node_names))
+    assert node_names == [
+        "load_user_context", "planner", "tool_router", "planner", "validator", "prepare_approval",
+    ]
+    assert updates[-1]["data"]["__interrupt__"][0].value["kind"] == "plan_approval"
+    assert all(update["type"] == "updates" for update in updates)
 
 
 def test_same_read_tool_is_not_executed_twice_in_one_run() -> None:
@@ -189,7 +195,7 @@ def test_same_read_tool_is_not_executed_twice_in_one_run() -> None:
 
     result = AgentHarness(planner=planner).run(snapshot_payload(), "thread-no-duplicate-tools")
 
-    assert result.status == "completed"
+    assert result.status == "awaiting_approval"
     assert [item.status for item in result.tool_results] == ["success", "denied"]
     assert "不重复执行" in (result.tool_results[1].error or "")
 
@@ -283,12 +289,13 @@ def test_agent_api_uses_provider_only_after_context_manifest_and_tools(monkeypat
     })
 
     assert status.status_code == 200
-    assert status.json()["mode"] == "read_only"
+    assert status.json()["mode"] == "stateful_approval"
+    assert status.json()["durable"] is True
     assert set(status.json()["tools"]) == {
         "query_todos", "query_focus_summary", "retrieve_personal_knowledge",
     }
     assert response.status_code == 200
-    assert response.json()["status"] == "completed"
+    assert response.json()["status"] == "awaiting_approval"
     assert response.json()["planDraft"]["items"][0]["sourceActionSlipIds"] == ["todo-1"]
     assert len(provider.messages) == 2
     assert "完成 Agent 契约" not in provider.messages[0][1]["content"]
@@ -300,3 +307,57 @@ def test_agent_api_uses_provider_only_after_context_manifest_and_tools(monkeypat
         if event["kind"] == "node_completed" and event.get("node") == "planner"
     ]
     assert planner_events[-1]["details"]["input_tokens"] == 100
+
+    resumed = client.post("/api/agent/threads/api-agent-thread/resume", json={
+        "decision": {"decision": "approve", "operations": ["save_plan"]},
+    })
+    assert resumed.status_code == 200
+    assert resumed.json()["status"] == "awaiting_execution"
+    intent = resumed.json()["mutationIntents"][0]
+    assert intent["toolName"] == "save_plan"
+
+    acknowledged = client.post("/api/agent/threads/api-agent-thread/ack", json={
+        "executionAck": {
+            "observedStateRevision": intent["baseStateRevision"],
+            "items": [{"actionId": intent["actionId"], "status": "applied"}],
+        },
+    })
+    assert acknowledged.status_code == 200
+    assert acknowledged.json()["status"] == "completed"
+
+    streamed = client.post("/api/agent/plan/stream", json={
+        "threadId": "api-agent-stream-thread",
+        "context": snapshot_payload(),
+    })
+    assert streamed.status_code == 200
+    assert streamed.headers["content-type"].startswith("text/event-stream")
+    assert "event: progress" in streamed.text
+    assert "event: result" in streamed.text
+    assert '"status": "awaiting_approval"' in streamed.text
+
+    rejected_stream = client.post("/api/agent/threads/api-agent-stream-thread/resume/stream", json={
+        "decision": {"decision": "reject", "operations": []},
+    })
+    assert rejected_stream.status_code == 200
+    assert "event: progress" in rejected_stream.text
+    assert "event: result" in rejected_stream.text
+    assert '"status": "rejected"' in rejected_stream.text
+
+    ack_candidate = client.post("/api/agent/plan", json={
+        "threadId": "api-agent-ack-stream-thread",
+        "context": snapshot_payload(),
+    })
+    assert ack_candidate.json()["status"] == "awaiting_approval"
+    ack_proposed = client.post("/api/agent/threads/api-agent-ack-stream-thread/resume", json={
+        "decision": {"decision": "approve", "operations": ["save_plan"]},
+    }).json()
+    ack_intent = ack_proposed["mutationIntents"][0]
+    ack_stream = client.post("/api/agent/threads/api-agent-ack-stream-thread/ack/stream", json={
+        "executionAck": {
+            "observedStateRevision": ack_intent["baseStateRevision"],
+            "items": [{"actionId": ack_intent["actionId"], "status": "applied"}],
+        },
+    })
+    assert "event: progress" in ack_stream.text
+    assert "event: result" in ack_stream.text
+    assert '"status": "completed"' in ack_stream.text

@@ -7,11 +7,24 @@ from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 
 AGENT_SCHEMA_VERSION = 1
-AGENT_GRAPH_VERSION = "0.5.0-read-only-v1"
+AGENT_GRAPH_VERSION = "0.5.1-stateful-v1"
 
 ConsentScope = Literal["todos", "daily_plans", "focus_summary", "knowledge_sources"]
 RiskLevel = Literal["read", "propose_write", "commit"]
-AgentStatus = Literal["created", "planning", "using_tools", "validating", "completed", "failed"]
+AgentStatus = Literal[
+    "created",
+    "planning",
+    "using_tools",
+    "validating",
+    "awaiting_approval",
+    "approved",
+    "rejected",
+    "awaiting_execution",
+    "completed",
+    "execution_failed",
+    "cancelled",
+    "failed",
+]
 TraceKind = Literal[
     "run_started",
     "node_started",
@@ -20,6 +33,10 @@ TraceKind = Literal[
     "permission_decision",
     "tool_completed",
     "validation_failed",
+    "approval_requested",
+    "approval_resumed",
+    "mutation_proposed",
+    "execution_acknowledged",
     "run_completed",
     "run_failed",
 ]
@@ -208,6 +225,20 @@ class PlannerDecision(ContractModel):
         return self
 
 
+class SavePlanArguments(ContractModel):
+    thread_id: str = Field(min_length=1, max_length=100)
+    run_id: str = Field(min_length=8, max_length=100)
+    plan: PlanDraft
+
+
+class StartFocusArguments(ContractModel):
+    task_name: str = Field(min_length=1, max_length=240)
+    minutes: int = Field(ge=5, le=180)
+    first_step: str = Field(min_length=1, max_length=300)
+    completion_criteria: str = Field(min_length=1, max_length=400)
+    action_slip_id: Optional[str] = Field(default=None, max_length=100)
+
+
 class MutationIntent(ContractModel):
     action_id: str = Field(min_length=8, max_length=100)
     tool_name: Literal["save_plan", "start_focus"]
@@ -215,6 +246,55 @@ class MutationIntent(ContractModel):
     base_state_revision: str = Field(min_length=16, max_length=128)
     risk_level: Literal["commit"] = "commit"
     status: Literal["proposed"] = "proposed"
+
+    @model_validator(mode="after")
+    def arguments_match_tool(self) -> "MutationIntent":
+        if self.tool_name == "save_plan":
+            SavePlanArguments.model_validate(self.arguments)
+        else:
+            StartFocusArguments.model_validate(self.arguments)
+        return self
+
+
+class ApprovalDecision(ContractModel):
+    decision: Literal["approve", "modify", "reject"]
+    operations: list[Literal["save_plan", "start_focus"]] = Field(default_factory=list, max_length=2)
+    modified_plan: Optional[PlanDraft] = None
+    note: Optional[str] = Field(default=None, max_length=500)
+
+    @model_validator(mode="after")
+    def validate_decision_payload(self) -> "ApprovalDecision":
+        if len(self.operations) != len(set(self.operations)):
+            raise ValueError("批准操作不能重复。")
+        if self.decision == "reject":
+            if self.operations or self.modified_plan is not None:
+                raise ValueError("拒绝决定不能携带写入操作或修改计划。")
+            return self
+        if not self.operations:
+            raise ValueError("同意或修改计划时必须选择至少一个操作。")
+        if self.decision == "modify" and self.modified_plan is None:
+            raise ValueError("修改决定必须提供 modifiedPlan。")
+        if self.decision == "approve" and self.modified_plan is not None:
+            raise ValueError("直接同意时不能替换计划。")
+        return self
+
+
+class ExecutionAckItem(ContractModel):
+    action_id: str = Field(min_length=8, max_length=100)
+    status: Literal["applied", "already_applied", "failed"]
+    error: Optional[str] = Field(default=None, max_length=500)
+
+
+class ExecutionAck(ContractModel):
+    observed_state_revision: str = Field(min_length=16, max_length=128)
+    items: list[ExecutionAckItem] = Field(min_length=1, max_length=2)
+
+    @model_validator(mode="after")
+    def action_ids_are_unique(self) -> "ExecutionAck":
+        action_ids = [item.action_id for item in self.items]
+        if len(action_ids) != len(set(action_ids)):
+            raise ValueError("executionAck 的 actionId 不能重复。")
+        return self
 
 
 class TraceEvent(ContractModel):
@@ -237,6 +317,9 @@ class AgentRunResult(ContractModel):
     evidence: list[EvidenceItem] = Field(default_factory=list, max_length=8)
     tool_results: list[ToolResult] = Field(default_factory=list, max_length=20)
     validation_errors: list[str] = Field(default_factory=list, max_length=20)
+    approval_decision: Optional[ApprovalDecision] = None
+    mutation_intents: list[MutationIntent] = Field(default_factory=list, max_length=2)
+    execution_ack: Optional[ExecutionAck] = None
     trace: list[TraceEvent] = Field(default_factory=list, max_length=200)
 
 
@@ -252,5 +335,9 @@ class AgentState(TypedDict, total=False):
     evidence: list[dict[str, Any]]
     plan_draft: Optional[dict[str, Any]]
     validation_errors: list[str]
+    approval_decision: Optional[dict[str, Any]]
+    approved_operations: list[str]
+    mutation_intents: list[dict[str, Any]]
+    execution_ack: Optional[dict[str, Any]]
     status: AgentStatus
     step_count: int

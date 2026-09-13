@@ -12,7 +12,7 @@ class PermissionDecision:
 
 
 class PermissionPolicy:
-    """Code-level permission gate for the read-only 0.5.0 graph."""
+    """Code-level permission gate for the read-only planning portion of the graph."""
 
     def authorize(
         self,
@@ -21,7 +21,7 @@ class PermissionPolicy:
         snapshot: ActionContextSnapshot,
     ) -> PermissionDecision:
         if definition.risk_level != "read":
-            return PermissionDecision(False, "0.5.0 只允许执行只读工具。")
+            return PermissionDecision(False, "规划阶段只允许执行只读工具。")
 
         granted = set(snapshot.consent_scope)
         missing = [permission for permission in definition.required_permissions if permission not in granted]

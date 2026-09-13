@@ -1,9 +1,12 @@
 from __future__ import annotations
 
+import atexit
+import json
 from typing import Literal, Optional
 
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, ConfigDict, Field, SecretStr
 
 from . import __version__
@@ -30,8 +33,14 @@ from .generation import (
     build_context,
     generation_provider,
 )
-from .agent.checkpoints import build_in_memory_checkpointer
-from .agent.contracts import AGENT_GRAPH_VERSION, ActionContextSnapshot, AgentRunResult
+from .agent.checkpoints import build_sqlite_checkpointer, resolve_checkpoint_path
+from .agent.contracts import (
+    AGENT_GRAPH_VERSION,
+    ActionContextSnapshot,
+    AgentRunResult,
+    ApprovalDecision,
+    ExecutionAck,
+)
 from .agent.harness import AgentHarness
 from .agent.planner import DeepSeekActionPlanner
 from .agent.prompts import build_prompt_registry
@@ -233,11 +242,20 @@ class AgentPlanRequest(ApiModel):
 
 class AgentFoundationStatusResponse(ApiModel):
     graph_version: str
-    mode: Literal["read_only"] = "read_only"
+    mode: Literal["stateful_approval"] = "stateful_approval"
     available: bool
     provider: str
     model: Optional[str]
     tools: list[str]
+    durable: bool = True
+
+
+class AgentResumeRequest(ApiModel):
+    decision: ApprovalDecision
+
+
+class AgentExecutionAckRequest(ApiModel):
+    execution_ack: ExecutionAck
 
 
 app = FastAPI(
@@ -252,9 +270,18 @@ app.add_middleware(
     allow_headers=["Content-Type"],
 )
 
-agent_checkpointer = build_in_memory_checkpointer()
-agent_trace_recorder = TraceRecorder()
+agent_checkpoint_path = resolve_checkpoint_path()
+agent_checkpointer = build_sqlite_checkpointer(agent_checkpoint_path)
+agent_trace_recorder = TraceRecorder(agent_checkpoint_path)
 agent_prompt_registry = build_prompt_registry()
+
+
+def close_agent_runtime() -> None:
+    agent_trace_recorder.close()
+    agent_checkpointer.conn.close()
+
+
+atexit.register(close_agent_runtime)
 
 
 @app.get("/api/health")
@@ -386,7 +413,158 @@ def run_agent_plan(request: AgentPlanRequest) -> AgentRunResult:
     status = generation_provider.status()
     if not status.get("available"):
         raise HTTPException(status_code=503, detail="DeepSeek 尚未配置，请先在设置页安全保存 API Key。")
-    return build_active_agent_harness().run(request.context, request.thread_id)
+    try:
+        return build_active_agent_harness().run(request.context, request.thread_id)
+    except ValueError as error:
+        raise HTTPException(status_code=409, detail=str(error)) from error
+
+
+_AGENT_PROGRESS_LABELS = {
+    "load_user_context": "正在校验本次行动快照",
+    "planner": "DeepSeek 正在选择只读工具或生成计划",
+    "tool_router": "正在执行已授权的只读工具",
+    "validator": "正在校验计划结构、待办来源与证据",
+    "prepare_approval": "计划已校验，正在进入人工审批",
+    "human_approval": "等待你的批准、修改或拒绝",
+    "build_mutation_intents": "正在生成幂等写入意图",
+    "await_client_commit": "等待前端确认执行结果",
+}
+
+
+def _sse_event(event: str, payload: dict) -> str:
+    return f"event: {event}\ndata: {json.dumps(payload, ensure_ascii=False)}\n\n"
+
+
+def _agent_progress_events(parts):
+    for part in parts:
+        data = part.get("data", {})
+        if "__interrupt__" in data:
+            interrupt_value = data["__interrupt__"][0].value
+            kind = interrupt_value.get("kind") if isinstance(interrupt_value, dict) else None
+            node = "await_client_commit" if kind == "execution_ack" else "human_approval"
+            yield _sse_event("progress", {
+                "node": node,
+                "status": "awaiting_execution" if node == "await_client_commit" else "awaiting_approval",
+                "label": _AGENT_PROGRESS_LABELS[node],
+            })
+            continue
+        for node, update in data.items():
+            yield _sse_event("progress", {
+                "node": node,
+                "status": update.get("status", "running") if isinstance(update, dict) else "running",
+                "label": _AGENT_PROGRESS_LABELS.get(node, "Agent 正在处理"),
+            })
+
+
+def _agent_stream_error(error: Exception) -> str:
+    return _sse_event("error", {
+        "message": str(error) if isinstance(error, (KeyError, ValueError)) else "Agent 流式运行失败。",
+    })
+
+
+@app.post("/api/agent/plan/stream")
+def stream_agent_plan(request: AgentPlanRequest) -> StreamingResponse:
+    status = generation_provider.status()
+    if not status.get("available"):
+        raise HTTPException(status_code=503, detail="DeepSeek 尚未配置，请先在设置页安全保存 API Key。")
+    harness = build_active_agent_harness()
+
+    def generate():
+        yield _sse_event("progress", {
+            "node": "start",
+            "status": "created",
+            "label": "已建立持久 Agent 线程",
+        })
+        try:
+            yield from _agent_progress_events(harness.stream(request.context, request.thread_id))
+            result = harness.get_state(request.thread_id)
+            yield _sse_event("result", result.model_dump(mode="json", by_alias=True))
+        except Exception as error:
+            yield _agent_stream_error(error)
+
+    return StreamingResponse(
+        generate(),
+        media_type="text/event-stream",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+    )
+
+
+@app.get("/api/agent/threads/{thread_id}", response_model=AgentRunResult)
+def get_agent_thread(thread_id: str) -> AgentRunResult:
+    try:
+        return build_active_agent_harness().get_state(thread_id)
+    except KeyError as error:
+        raise HTTPException(status_code=404, detail=str(error)) from error
+    except ValueError as error:
+        raise HTTPException(status_code=422, detail=str(error)) from error
+
+
+@app.post("/api/agent/threads/{thread_id}/resume", response_model=AgentRunResult)
+def resume_agent_thread(thread_id: str, request: AgentResumeRequest) -> AgentRunResult:
+    try:
+        return build_active_agent_harness().resume(thread_id, request.decision)
+    except KeyError as error:
+        raise HTTPException(status_code=404, detail=str(error)) from error
+    except ValueError as error:
+        raise HTTPException(status_code=409, detail=str(error)) from error
+
+
+@app.post("/api/agent/threads/{thread_id}/resume/stream")
+def stream_resume_agent_thread(thread_id: str, request: AgentResumeRequest) -> StreamingResponse:
+    harness = build_active_agent_harness()
+
+    def generate():
+        yield _sse_event("progress", {
+            "node": "human_approval",
+            "status": "approved" if request.decision.decision != "reject" else "rejected",
+            "label": "正在提交你的审批决定",
+        })
+        try:
+            yield from _agent_progress_events(harness.resume_stream(thread_id, request.decision))
+            result = harness.get_state(thread_id)
+            yield _sse_event("result", result.model_dump(mode="json", by_alias=True))
+        except Exception as error:
+            yield _agent_stream_error(error)
+
+    return StreamingResponse(
+        generate(),
+        media_type="text/event-stream",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+    )
+
+
+@app.post("/api/agent/threads/{thread_id}/ack", response_model=AgentRunResult)
+def acknowledge_agent_thread(thread_id: str, request: AgentExecutionAckRequest) -> AgentRunResult:
+    try:
+        return build_active_agent_harness().acknowledge(thread_id, request.execution_ack)
+    except KeyError as error:
+        raise HTTPException(status_code=404, detail=str(error)) from error
+    except ValueError as error:
+        raise HTTPException(status_code=409, detail=str(error)) from error
+
+
+@app.post("/api/agent/threads/{thread_id}/ack/stream")
+def stream_acknowledge_agent_thread(thread_id: str, request: AgentExecutionAckRequest) -> StreamingResponse:
+    harness = build_active_agent_harness()
+
+    def generate():
+        yield _sse_event("progress", {
+            "node": "execution_ack",
+            "status": "validating",
+            "label": "正在确认本地执行结果",
+        })
+        try:
+            yield from _agent_progress_events(harness.acknowledge_stream(thread_id, request.execution_ack))
+            result = harness.get_state(thread_id)
+            yield _sse_event("result", result.model_dump(mode="json", by_alias=True))
+        except Exception as error:
+            yield _agent_stream_error(error)
+
+    return StreamingResponse(
+        generate(),
+        media_type="text/event-stream",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+    )
 
 
 def request_chunks(items: list[ChunkInput]) -> list[RetrievalChunk]:
