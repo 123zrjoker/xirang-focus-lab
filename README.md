@@ -1,5 +1,7 @@
 # 息壤 · 注意力训练与专注启动实验室
 
+0.5.2 完成独立 Agent Evaluation Harness：`AgentHarness.evaluate()` 可加载带 SHA-256 与版本号的固定数据集，批量复现工具选择/顺序/参数字段、计划结构、完整轨迹、人工审批、SQLite 恢复、修订冲突、幂等副作用、引用、提示注入、故障恢复、延迟、tokens 与成本。15 条 Fake Eval 安全与质量门禁全部通过；5 条真实 DeepSeek 保留集全部通过，输入/输出为 11,274 / 2,176 tokens，峰时价格口径成本上界约 $0.00505，P50/P95 为 15.842/16.815 秒。0.5.1 Checkpoint 可继续恢复，未知图版本会失败关闭；Trace 追踪 Prompt/工具/图版本并同时按字段名和内容模式脱敏凭据。
+
 0.5.1 完成首个可恢复的人工审批闭环：LangGraph 运行状态与脱敏 Trace 持久化到本机 SQLite，服务重启后可凭稳定线程 ID 回到审批点；计划支持同意、修改和拒绝，批准后由后端生成带状态修订号和确定性 `actionId` 的 `save_plan` / `start_focus` Mutation Intent，前端原子校验、幂等执行并回传确认。今日页通过 SSE 展示读取、工具、规划、校验、审批恢复、执行确认和完成/失败进度；到达审批点后，即使关闭页面或重启服务也能恢复。计划只会在批准且修订号未冲突时保存，专注也只会在服务端确认后启动。主应用数据格式升级为 v11，用于保存最近 50 份已批准计划。
 
 0.5.0 将项目从“可评测 RAG 应用”推进为首个只读状态化 Agent：开发基线迁移到 Python 3.11，并锁定 LangGraph 及内存 Checkpointer；前端可按数据类别和知识来源构造、检查最小行动快照，再显式调用 DeepSeek。Agent 可从三个受权限策略约束的只读工具中选择所需信息，再生成最多 7 项、带第一步、完成标准、待办来源和知识证据引用的计划草案；服务端会严格校验模型结构、待办 ID 和证据白名单。当前版本没有保存计划、启动专注或其他业务写入能力，SQLite 恢复与人工批准留到 0.5.1。
@@ -92,7 +94,7 @@ powershell -ExecutionPolicy Bypass -File scripts/download_retrieval_models.ps1
 
 启动后端和网站后，在“设置 → DeepSeek 安全凭据”输入一次 Key。Key 由本机后端使用 Windows DPAPI 按当前 Windows 用户加密，明文不会进入源码、浏览器存储、应用数据备份或 API 响应；以后使用普通 `npm run dev:api` 启动即可自动读取。只有主动替换或删除时才需要再次操作。
 
-“今日”页的 Agent Foundation 会先在浏览器中显示完整发送前快照。只有点击“生成只读计划草案”后，快照才会发送给本机 FastAPI 服务并由已配置的 DeepSeek 规划；一次规划通常有“选择只读工具”和“生成草案”两轮结构化请求。结果只显示草案、依据、假设和工具轨迹，不提供保存或执行入口。
+“今日”页的 Agent 会先在浏览器中显示完整发送前快照。只有点击“生成只读计划草案”后，快照才会发送给本机 FastAPI 服务并由已配置的 DeepSeek 规划；一次规划通常有“选择只读工具”和“生成草案”两轮结构化请求。草案必须再次由用户同意、修改或拒绝；只有明确批准且本地修订号未变化时，前端才会幂等保存计划或启动专注，并向持久图回传执行确认。
 
 以下入口仍可用于同时指定模型和 API 地址，但不会再要求终端重复输入 Key：
 
@@ -119,9 +121,11 @@ npm run eval:retrieval:vector
 npm run eval:retrieval:calibrate
 npm run eval:retrieval:ablation
 npm run eval:generation:real
+npm run eval:agent
+npm run eval:agent:real -- --allow-paid-api
 ```
 
-真实生成评测需要先在设置页保存 DeepSeek Key；命令只读取本机 DPAPI 密文，报告不会记录 Key。已冻结的 0.4.4 报告见 [`artifacts/evals/0.4.4-generation-real-eval.md`](artifacts/evals/0.4.4-generation-real-eval.md)。
+真实生成与 Agent 保留集评测需要先在设置页保存 DeepSeek Key；Agent 命令还要求 `--allow-paid-api` 显式确认付费调用。命令只读取本机 DPAPI 密文，报告不会记录 Key。已冻结报告见 [`0.4.4 RAG 生成评测`](artifacts/evals/0.4.4-generation-real-eval.md)、[`0.5.2 Agent Fake Eval`](artifacts/evals/0.5.2-agent-fake-eval.md) 和 [`0.5.2 Agent DeepSeek 保留集`](artifacts/evals/0.5.2-agent-deepseek-holdout.md)。
 
 构建结果位于 `dist/`。
 
@@ -155,7 +159,7 @@ npm run desktop:dist
 - DOCX/PDF 的原始二进制文件不会保存；扫描型 PDF 当前没有 OCR 能力，复杂多栏 PDF 的读取顺序取决于文件文字层。
 - “设置”页支持导出应用数据 JSON、导入恢复、导出 CSV 和二次确认清空。
 - JSON 备份可以在浏览器版与桌面版之间手动迁移训练、专注、计划、待办、笔记和设置；当前不包含 IndexedDB 中的知识库文档。
-- 数据格式当前为 v10；应用会自动迁移旧版状态，为旧雷达图建立初始基线，并尽量把旧版初始测评任务从日常训练中分离。v8 的“稍后任务”会自动并入行动便签收集区；v10 在保留 v9 待办、启动回合、现实专注及关联标识的基础上，新增独立笔记集合。
+- 数据格式当前为 v11；应用会自动迁移旧版状态。v8 的“稍后任务”会并入行动便签收集区，v10 新增独立笔记集合，v11 新增最近 50 份已批准 Agent 计划及本地幂等 action ledger。
 - 可在设置页调整每日投入目标、默认专注时长、提示音、界面动画、训练提示和专注完成通知，并管理个人知识来源、查看文本处理状态与分块结果。
 - 桌面程序与浏览器网站使用不同的本地数据空间，网页中的历史记录不会自动迁移到桌面程序。
 - 在设置页确认清空设备数据时会同时清除知识库；清除浏览器站点数据也会清除训练记录与本地知识来源。

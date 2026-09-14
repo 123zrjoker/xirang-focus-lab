@@ -4,9 +4,9 @@
 
 ## 当前基线
 
-- 当前版本：0.5.1（已完成，下一版本为 0.5.2）。
-- 已完成：个人知识库、混合检索与引用式 RAG 基线、Python 3.11、LangGraph 只读规划图，以及 SQLite Checkpoint、Interrupt/Resume、人工审批、状态冲突检查、幂等 Mutation Intent、SSE 进度和批准后的保存计划/启动专注闭环。
-- 当前边界：0.5.0 的真实 DeepSeek 验证使用合成行动数据完成一次端到端冒烟，不代表开放域或线上质量；0.5.1 的恢复、审批和写入安全路径已由确定性测试与界面验收覆盖，但 Agent Evaluation Harness、旧 Checkpoint 兼容矩阵和真实模型保留集尚未实现。
+- 当前版本：0.5.2（已完成，下一版本为 0.6.0）。
+- 已完成：个人知识库、混合检索与引用式 RAG、Python 3.11、LangGraph 状态图、SQLite Checkpoint、Interrupt/Resume、人工审批、状态冲突检查、幂等 Mutation Intent、SSE 进度，以及独立 Agent Evaluation Harness、兼容矩阵、故障注入与真实 DeepSeek 保留集。
+- 当前边界：Fake Eval 15 条与 DeepSeek 保留集 5 条均使用脱敏合成行动快照，只能证明固定分布下的工程与安全基线，不代表开放域用户质量或行动效果；0.6.0 才会建立用户自愿参加、可撤销且不宣称因果的个人行动实验。
 
 ## 实施顺序
 
@@ -14,7 +14,7 @@
 2. **0.4.4 引用式 RAG 问答（已完成）**：Provider 接口、DPAPI 凭据持久化、上下文预算、结构化回答、来源引用、拒答、注入防护和四类真实生成评测均已完成并冻结。
 3. **0.5.0 Agent Foundation 与个人行动上下文（已完成）**：迁移 Python 3.11，加入 LangGraph 只读状态图和自研 Harness 骨架，生成可预览、可选择、带样本边界的结构化行动快照；把现有检索管线作为只读工具接入。
 4. **0.5.1 有状态 AI 周计划闭环（已完成）**：SQLite Checkpoint、Interrupt/Resume、结构化草案、依据与假设、采用/修改/放弃、批准后的幂等 Mutation Intent，以及流式执行进度。
-5. **0.5.2 Agent Harness 与双层 Evaluation Harness**：完成模型、Prompt、工具、权限、校验、Trace 和评测统一接口；在现有 Retrieval Eval 外新增工具选择、参数、轨迹、任务、恢复、安全、延迟与成本评测。
+5. **0.5.2 Agent Harness 与双层 Evaluation Harness（已完成）**：完成模型、Prompt、工具、权限、校验、Trace 和评测统一接口；在现有 Retrieval Eval 外新增工具选择、参数、轨迹、任务、恢复、安全、延迟与成本评测。
 6. **0.6.0 个人行动实验**：用户主动选择、可撤销调整、前后变化对比且不宣称因果。
 7. **0.7.0 桌面端一体化**：服务进程、模型生命周期、密钥安全、知识库导出恢复和干净 Windows 安装验收。
 8. **0.8.0 工程质量**：缓存、后台任务、性能、并发、CI、依赖与安全审计。
