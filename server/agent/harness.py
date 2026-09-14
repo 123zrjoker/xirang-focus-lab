@@ -6,7 +6,7 @@ from uuid import uuid4
 
 from langgraph.types import Command
 
-from .checkpoints import build_in_memory_checkpointer
+from .checkpoints import build_in_memory_checkpointer, normalize_checkpoint_state
 from .contracts import (
     AGENT_GRAPH_VERSION,
     AGENT_SCHEMA_VERSION,
@@ -82,6 +82,7 @@ class AgentHarness:
         return normalized_thread_id
 
     def _result_from_state(self, state: dict[str, Any]) -> AgentRunResult:
+        state = normalize_checkpoint_state(state)
         return AgentRunResult(
             schema_version=AGENT_SCHEMA_VERSION,
             graph_version=state.get("graph_version", AGENT_GRAPH_VERSION),
@@ -110,7 +111,10 @@ class AgentHarness:
             "snapshot_id": snapshot.snapshot_id,
             "planner": self.planner.name,
             "model": self.planner.model,
+            "schema_version": AGENT_SCHEMA_VERSION,
+            "graph_version": AGENT_GRAPH_VERSION,
             "prompt_versions": self.prompts.versions(),
+            "tool_versions": self.tools.versions(),
         })
         final_state = self.graph.invoke(
             self._initial_state(snapshot, normalized_thread_id, run_id),
@@ -207,7 +211,10 @@ class AgentHarness:
             "snapshot_id": snapshot.snapshot_id,
             "planner": self.planner.name,
             "model": self.planner.model,
+            "schema_version": AGENT_SCHEMA_VERSION,
+            "graph_version": AGENT_GRAPH_VERSION,
             "prompt_versions": self.prompts.versions(),
+            "tool_versions": self.tools.versions(),
         })
         yield from self.graph.stream(
             self._initial_state(snapshot, normalized_thread_id, run_id),
@@ -223,5 +230,6 @@ class AgentHarness:
         return self.trace.get(run_id)
 
     def evaluate(self, dataset: Any):
-        del dataset
-        raise RuntimeError("Agent Evaluation Harness 将在 0.5.2 启用。")
+        from ..evals.agent.runner import evaluate_dataset
+
+        return evaluate_dataset(dataset, harness=self)

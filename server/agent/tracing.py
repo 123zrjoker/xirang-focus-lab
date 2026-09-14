@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import re
 import sqlite3
 from datetime import datetime, timezone
 from pathlib import Path
@@ -21,6 +22,21 @@ _SENSITIVE_KEYS = {
     "refresh_token",
 }
 _MAX_TRACE_TEXT = 1_000
+_INLINE_SECRET_PATTERNS = (
+    re.compile(r"(?i)(bearer\s+)[a-z0-9._~+/=-]{8,}"),
+    re.compile(r"(?i)\bsk-[a-z0-9_-]{8,}\b"),
+    re.compile(r"(?i)((?:api[_-]?key|access[_-]?token|refresh[_-]?token|password|secret)\s*[:=]\s*)[^\s,;]+"),
+)
+
+
+def _redact_text(value: str) -> str:
+    redacted = value
+    redacted = _INLINE_SECRET_PATTERNS[0].sub(r"\1[REDACTED]", redacted)
+    redacted = _INLINE_SECRET_PATTERNS[1].sub("[REDACTED]", redacted)
+    redacted = _INLINE_SECRET_PATTERNS[2].sub(r"\1[REDACTED]", redacted)
+    if len(redacted) > _MAX_TRACE_TEXT:
+        return f"{redacted[:_MAX_TRACE_TEXT]}…"
+    return redacted
 
 
 def _redact(value: Any, key: str = "") -> Any:
@@ -31,8 +47,8 @@ def _redact(value: Any, key: str = "") -> Any:
         return {str(item_key): _redact(item_value, str(item_key)) for item_key, item_value in value.items()}
     if isinstance(value, list):
         return [_redact(item) for item in value[:50]]
-    if isinstance(value, str) and len(value) > _MAX_TRACE_TEXT:
-        return f"{value[:_MAX_TRACE_TEXT]}…"
+    if isinstance(value, str):
+        return _redact_text(value)
     return value
 
 

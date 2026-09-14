@@ -241,7 +241,7 @@ export function AgentContextPreview({ state, onExecuteMutations, onStartApproved
     <section className="agent-context-card card-surface" aria-labelledby="agent-context-title">
       <div className="agent-context-heading">
         <div>
-          <p className="eyebrow">0.5.1 · Stateful Agent</p>
+          <p className="eyebrow">0.5.2 · Evaluated Agent</p>
           <h2 id="agent-context-title">先预览，再规划，最后由你批准</h2>
           <p>规划阶段只读；保存计划或启动专注必须经过人工批准、状态冲突检查与幂等确认。</p>
         </div>

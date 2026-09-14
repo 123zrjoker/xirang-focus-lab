@@ -74,6 +74,9 @@ class ToolRegistry:
     def definitions(self) -> list[ToolDefinition]:
         return [tool.definition for tool in self._tools.values()]
 
+    def versions(self) -> dict[str, str]:
+        return {tool.definition.name: tool.definition.version for tool in self._tools.values()}
+
     def get(self, name: str) -> RegisteredTool:
         try:
             return self._tools[name]
@@ -93,7 +96,12 @@ class ToolRegistry:
             run_id,
             "tool_requested",
             node="tool_router",
-            details={"call_id": request.call_id, "tool": request.name, "purpose": request.purpose},
+            details={
+                "call_id": request.call_id,
+                "tool": request.name,
+                "purpose": request.purpose,
+                "argument_keys": sorted(request.arguments),
+            },
         )
         try:
             tool = self.get(request.name)
@@ -131,7 +139,22 @@ class ToolRegistry:
 
         try:
             parsed_input = tool.input_model.model_validate(request.arguments)
-            output = tool.handler(snapshot, parsed_input)
+            attempts = 2 if tool.definition.retry_policy == "safe_once" else 1
+            output: dict[str, Any] | None = None
+            for attempt in range(1, attempts + 1):
+                try:
+                    output = tool.handler(snapshot, parsed_input)
+                    break
+                except Exception as error:
+                    if attempt >= attempts:
+                        raise
+                    trace.record(run_id, "tool_retry", node="tool_router", details={
+                        "call_id": request.call_id,
+                        "tool": request.name,
+                        "attempt": attempt + 1,
+                        "reason": type(error).__name__,
+                    })
+            assert output is not None
             result = ToolResult(
                 call_id=request.call_id,
                 name=request.name,
@@ -145,6 +168,14 @@ class ToolRegistry:
                 name=request.name,
                 status="error",
                 error=f"工具参数不符合契约（{len(error.errors())} 项校验错误）。",
+                duration_ms=round((time.perf_counter() - started) * 1_000, 3),
+            )
+        except TimeoutError:
+            result = ToolResult(
+                call_id=request.call_id,
+                name=request.name,
+                status="error",
+                error="工具执行超时。",
                 duration_ms=round((time.perf_counter() - started) * 1_000, 3),
             )
         except Exception as error:
@@ -250,11 +281,14 @@ def _schema(model: Type[BaseModel]) -> dict[str, Any]:
 def build_read_only_registry(
     vector_index: LocalVectorIndex = semantic_index,
     reranker: Any = reranker_provider,
+    *,
+    knowledge_tool_handler: ToolHandler | None = None,
 ) -> ToolRegistry:
     registry = ToolRegistry()
     registry.register(RegisteredTool(
         definition=ToolDefinition(
             name="query_todos",
+            version="1.0.0",
             description="读取用户本次显式提供的未完成行动待办。",
             input_schema=_schema(QueryTodosInput),
             output_schema={"type": "object"},
@@ -267,6 +301,7 @@ def build_read_only_registry(
     registry.register(RegisteredTool(
         definition=ToolDefinition(
             name="query_focus_summary",
+            version="1.0.0",
             description="读取由前端确定性聚合的近期专注摘要，不读取原始会话正文。",
             input_schema=_schema(QueryFocusSummaryInput),
             output_schema={"type": "object"},
@@ -279,6 +314,7 @@ def build_read_only_registry(
     registry.register(RegisteredTool(
         definition=ToolDefinition(
             name="retrieve_personal_knowledge",
+            version="1.0.0",
             description="只在用户本次选择的知识来源中执行混合检索并返回可引用证据。",
             input_schema=_schema(RetrievePersonalKnowledgeInput),
             output_schema={"type": "object"},
@@ -288,6 +324,6 @@ def build_read_only_registry(
             redaction_policy="content",
         ),
         input_model=RetrievePersonalKnowledgeInput,
-        handler=_knowledge_handler(vector_index, reranker),
+        handler=knowledge_tool_handler or _knowledge_handler(vector_index, reranker),
     ))
     return registry

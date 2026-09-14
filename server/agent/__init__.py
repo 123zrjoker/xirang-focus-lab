@@ -1,4 +1,4 @@
-"""Read-only Agent Foundation for Xirang 0.5.x."""
+"""Stateful, evaluated action-agent runtime for Xirang 0.5.x."""
 
 from .contracts import ActionContextSnapshot, AgentRunResult, PlanDraft
 from .harness import AgentHarness

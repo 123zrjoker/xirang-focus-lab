@@ -105,7 +105,9 @@ class AgentNodes:
             decision = self.planner.plan(snapshot, tool_results)
         except PlannerExecutionError as error:
             message = str(error)
-            self.trace.record(state["run_id"], "run_failed", node=node, details={"reason": message})
+            details = {"reason": message}
+            details.update(getattr(self.planner, "last_generation_metadata", {}))
+            self.trace.record(state["run_id"], "run_failed", node=node, details=details)
             return {"status": "failed", "validation_errors": [message], "step_count": next_step}
         except Exception as error:
             message = f"规划器执行失败：{type(error).__name__}。"

@@ -7,7 +7,11 @@ from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 
 AGENT_SCHEMA_VERSION = 1
-AGENT_GRAPH_VERSION = "0.5.1-stateful-v1"
+AGENT_GRAPH_VERSION = "0.5.2-evaluation-v1"
+AGENT_COMPATIBLE_GRAPH_VERSIONS = frozenset({
+    "0.5.1-stateful-v1",
+    AGENT_GRAPH_VERSION,
+})
 
 ConsentScope = Literal["todos", "daily_plans", "focus_summary", "knowledge_sources"]
 RiskLevel = Literal["read", "propose_write", "commit"]
@@ -32,6 +36,7 @@ TraceKind = Literal[
     "tool_requested",
     "permission_decision",
     "tool_completed",
+    "tool_retry",
     "validation_failed",
     "approval_requested",
     "approval_resumed",
@@ -187,6 +192,7 @@ class PlanDraft(ContractModel):
 
 class ToolDefinition(ContractModel):
     name: str = Field(pattern=r"^[a-z][a-z0-9_]{2,63}$")
+    version: str = Field(default="1.0.0", pattern=r"^[0-9]+\.[0-9]+\.[0-9]+(?:[-+][a-zA-Z0-9.-]+)?$")
     description: str = Field(min_length=1, max_length=500)
     input_schema: dict[str, Any]
     output_schema: dict[str, Any]
