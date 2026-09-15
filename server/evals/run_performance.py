@@ -16,6 +16,7 @@ DEFAULT_THRESHOLDS_MS = {
     "healthP95Ms": 250.0,
     "diagnosticsP95Ms": 250.0,
     "keywordSearchP95Ms": 500.0,
+    "agentSseFirstEventP95Ms": 1_000.0,
 }
 
 
@@ -83,6 +84,7 @@ def render_markdown(report: dict[str, object]) -> str:
         "health": "GET /api/health",
         "diagnostics": "GET /api/diagnostics",
         "keywordSearch": "POST /api/retrieval/search（100 块 BM25）",
+        "agentSseFirstEvent": "POST /api/agent/plan/stream（首个 SSE 事件）",
     }
     check_by_name = {item["name"]: item for item in checks}
     for name, label in labels.items():
@@ -117,11 +119,28 @@ def main() -> int:
         os.environ["XIRANG_DATA_DIR"] = temporary
         from fastapi.testclient import TestClient
         from server import __version__
-        from server.main import app, close_agent_runtime
+        from server.agent.harness import AgentHarness
+        from server.evals.agent.dataset import DEFAULT_FAKE_DATASET, load_dataset
+        import server.main as main_module
 
         chunks = corpus_payload()
+        snapshot = load_dataset(DEFAULT_FAKE_DATASET).cases[0].snapshot.model_dump(mode="json", by_alias=True)
+        original_provider = main_module.generation_provider
+        original_harness_builder = main_module.build_active_agent_harness
+
+        class AvailableProvider:
+            name = "performance-fake"
+            model = "performance-fake"
+
+            @staticmethod
+            def status() -> dict[str, object]:
+                return {"available": True, "configured": True, "provider": "performance-fake", "model": "performance-fake"}
+
+        main_module.generation_provider = AvailableProvider()
+        main_module.build_active_agent_harness = lambda: AgentHarness()
+        sse_counter = 0
         try:
-            with TestClient(app) as client:
+            with TestClient(main_module.app) as client:
                 def health() -> None:
                     response = client.get("/api/health")
                     if response.status_code != 200 or response.json().get("status") != "ok":
@@ -142,13 +161,29 @@ def main() -> int:
                     if response.status_code != 200 or not response.json().get("results"):
                         raise RuntimeError("keyword benchmark request failed")
 
+                def agent_sse_first_event() -> None:
+                    nonlocal sse_counter
+                    sse_counter += 1
+                    with client.stream("POST", "/api/agent/plan/stream", json={
+                        "threadId": f"performance-sse-{sse_counter}",
+                        "context": snapshot,
+                    }) as response:
+                        if response.status_code != 200:
+                            raise RuntimeError("agent SSE benchmark request failed")
+                        first_event = next((line for line in response.iter_lines() if line.startswith("event: ")), "")
+                        if first_event != "event: progress":
+                            raise RuntimeError("agent SSE benchmark did not emit a progress event")
+
                 metrics = {
                     "health": measure(health, warmup=args.warmup, iterations=args.iterations),
                     "diagnostics": measure(diagnostics, warmup=args.warmup, iterations=args.iterations),
                     "keywordSearch": measure(keyword_search, warmup=args.warmup, iterations=args.iterations),
+                    "agentSseFirstEvent": measure(agent_sse_first_event, warmup=1, iterations=min(args.iterations, 10)),
                 }
         finally:
-            close_agent_runtime()
+            main_module.generation_provider = original_provider
+            main_module.build_active_agent_harness = original_harness_builder
+            main_module.close_agent_runtime()
 
     checks = [
         {
@@ -168,6 +203,12 @@ def main() -> int:
             "actualMs": metrics["keywordSearch"]["p95Ms"],
             "maximumMs": DEFAULT_THRESHOLDS_MS["keywordSearchP95Ms"],
             "passed": metrics["keywordSearch"]["p95Ms"] <= DEFAULT_THRESHOLDS_MS["keywordSearchP95Ms"],
+        },
+        {
+            "name": "agentSseFirstEvent",
+            "actualMs": metrics["agentSseFirstEvent"]["p95Ms"],
+            "maximumMs": DEFAULT_THRESHOLDS_MS["agentSseFirstEventP95Ms"],
+            "passed": metrics["agentSseFirstEvent"]["p95Ms"] <= DEFAULT_THRESHOLDS_MS["agentSseFirstEventP95Ms"],
         },
     ]
     report: dict[str, object] = {

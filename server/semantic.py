@@ -4,10 +4,13 @@ import hashlib
 import json
 import time
 import uuid
-from dataclasses import dataclass
+from collections import OrderedDict
+from copy import deepcopy
+from dataclasses import dataclass, replace
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Optional, Protocol, Sequence
+from threading import Lock, RLock
+from typing import Callable, Optional, Protocol, Sequence
 
 import numpy as np
 
@@ -22,6 +25,8 @@ from .runtime_paths import (
 COLLECTION_NAME = "xirang_knowledge_chunks"
 VECTOR_ENGINE_NAME = "bge-small-zh-v1.5+qdrant-local"
 BGE_QUERY_INSTRUCTION = "为这个句子生成表示以用于检索相关文章："
+QUERY_VECTOR_CACHE_CAPACITY = 128
+QUERY_RESULT_CACHE_CAPACITY = 64
 
 
 class ModelUnavailableError(RuntimeError):
@@ -29,6 +34,14 @@ class ModelUnavailableError(RuntimeError):
 
 
 class IndexNotReadyError(RuntimeError):
+    pass
+
+
+class IndexBusyError(RuntimeError):
+    pass
+
+
+class IndexSyncCancelled(RuntimeError):
     pass
 
 
@@ -48,11 +61,22 @@ class BgeEmbeddingProvider:
     name = "BAAI/bge-small-zh-v1.5"
     dimensions = 512
 
-    def __init__(self, model_path: Optional[Path] = None) -> None:
+    def __init__(
+        self,
+        model_path: Optional[Path] = None,
+        *,
+        query_cache_capacity: int = QUERY_VECTOR_CACHE_CAPACITY,
+    ) -> None:
         self.model_path = model_path or default_embedding_model_path()
         self._model = None
         self._checksum: Optional[str] = None
-        self._query_cache: dict[str, np.ndarray] = {}
+        self._model_lock = RLock()
+        self._cache_lock = RLock()
+        self._query_cache_capacity = max(0, query_cache_capacity)
+        self._query_cache: OrderedDict[str, np.ndarray] = OrderedDict()
+        self._query_cache_hits = 0
+        self._query_cache_misses = 0
+        self._query_cache_evictions = 0
 
     @property
     def available(self) -> bool:
@@ -84,27 +108,54 @@ class BgeEmbeddingProvider:
     def encode_documents(self, texts: Sequence[str]) -> np.ndarray:
         if not texts:
             return np.empty((0, self.dimensions), dtype=np.float32)
-        values = self._load().encode(
-            list(texts),
-            batch_size=16,
-            show_progress_bar=False,
-            normalize_embeddings=True,
-            convert_to_numpy=True,
-        )
+        with self._model_lock:
+            values = self._load().encode(
+                list(texts),
+                batch_size=16,
+                show_progress_bar=False,
+                normalize_embeddings=True,
+                convert_to_numpy=True,
+            )
         return np.asarray(values, dtype=np.float32)
 
     def encode_query(self, text: str) -> np.ndarray:
-        if text in self._query_cache:
-            return self._query_cache[text]
-        value = self._load().encode(
-            [f"{BGE_QUERY_INSTRUCTION}{text}"],
-            show_progress_bar=False,
-            normalize_embeddings=True,
-            convert_to_numpy=True,
-        )[0]
+        cache_key = hashlib.sha256(text.encode("utf-8")).hexdigest()
+        with self._cache_lock:
+            cached = self._query_cache.pop(cache_key, None)
+            if cached is not None:
+                self._query_cache[cache_key] = cached
+                self._query_cache_hits += 1
+                return cached.copy()
+            self._query_cache_misses += 1
+        with self._model_lock:
+            value = self._load().encode(
+                [f"{BGE_QUERY_INSTRUCTION}{text}"],
+                show_progress_bar=False,
+                normalize_embeddings=True,
+                convert_to_numpy=True,
+            )[0]
         result = np.asarray(value, dtype=np.float32)
-        self._query_cache[text] = result
-        return result
+        with self._cache_lock:
+            if self._query_cache_capacity > 0:
+                self._query_cache[cache_key] = result.copy()
+                while len(self._query_cache) > self._query_cache_capacity:
+                    self._query_cache.popitem(last=False)
+                    self._query_cache_evictions += 1
+            return result
+
+    def query_cache_status(self) -> dict[str, int]:
+        with self._cache_lock:
+            return {
+                "capacity": self._query_cache_capacity,
+                "size": len(self._query_cache),
+                "hits": self._query_cache_hits,
+                "misses": self._query_cache_misses,
+                "evictions": self._query_cache_evictions,
+            }
+
+    def clear_query_cache(self) -> None:
+        with self._cache_lock:
+            self._query_cache.clear()
 
 
 @dataclass(frozen=True)
@@ -186,6 +237,7 @@ class LocalVectorIndex:
         path: Optional[Path] = None,
         meta_path: Optional[Path] = None,
         memory: bool = False,
+        query_cache_capacity: int = QUERY_RESULT_CACHE_CAPACITY,
     ) -> None:
         self.provider = provider or BgeEmbeddingProvider()
         self.path = path or default_vector_index_path()
@@ -193,6 +245,80 @@ class LocalVectorIndex:
         self.memory = memory
         self._client = None
         self._memory_meta: dict = {}
+        self._operation_lock = RLock()
+        self._sync_lock = Lock()
+        self._cache_lock = RLock()
+        self._mutation_generation = 0
+        self._query_cache_capacity = max(0, query_cache_capacity)
+        self._query_cache: OrderedDict[tuple[object, ...], SearchOutput] = OrderedDict()
+        self._query_cache_hits = 0
+        self._query_cache_misses = 0
+        self._query_cache_evictions = 0
+        self._query_cache_invalidations = 0
+
+    def _query_cache_key(
+        self,
+        *,
+        fingerprint: str,
+        query: str,
+        top_k: int,
+        apply_threshold: bool,
+        source_ids: Optional[Sequence[str]],
+    ) -> tuple[object, ...]:
+        return (
+            str(self.path.resolve()) if not self.memory else "memory",
+            fingerprint,
+            getattr(self.provider, "checksum", None),
+            normalize_text(query),
+            top_k,
+            apply_threshold,
+            tuple(sorted(set(source_ids))) if source_ids is not None else None,
+        )
+
+    def _cached_search(self, key: tuple[object, ...], started: float) -> Optional[SearchOutput]:
+        with self._cache_lock:
+            cached = self._query_cache.pop(key, None)
+            if cached is None:
+                self._query_cache_misses += 1
+                return None
+            self._query_cache[key] = cached
+            self._query_cache_hits += 1
+            return replace(
+                deepcopy(cached),
+                duration_ms=round((time.perf_counter() - started) * 1_000, 3),
+            )
+
+    def _store_cached_search(self, key: tuple[object, ...], output: SearchOutput) -> None:
+        if self._query_cache_capacity <= 0:
+            return
+        with self._cache_lock:
+            self._query_cache[key] = deepcopy(output)
+            self._query_cache.move_to_end(key)
+            while len(self._query_cache) > self._query_cache_capacity:
+                self._query_cache.popitem(last=False)
+                self._query_cache_evictions += 1
+
+    def _invalidate_query_cache(self) -> None:
+        with self._cache_lock:
+            self._query_cache.clear()
+            self._query_cache_invalidations += 1
+
+    def cache_status(self) -> dict[str, object]:
+        with self._cache_lock:
+            result_cache = {
+                "capacity": self._query_cache_capacity,
+                "size": len(self._query_cache),
+                "hits": self._query_cache_hits,
+                "misses": self._query_cache_misses,
+                "evictions": self._query_cache_evictions,
+                "invalidations": self._query_cache_invalidations,
+            }
+        provider_status = getattr(self.provider, "query_cache_status", None)
+        return {
+            "scope": "index-instance",
+            "resultCache": result_cache,
+            "vectorCache": provider_status() if callable(provider_status) else None,
+        }
 
     def _qdrant(self):
         if self._client is None:
@@ -259,86 +385,206 @@ class LocalVectorIndex:
             if offset is None:
                 return points
 
-    def sync(self, chunks: Sequence[RetrievalChunk]) -> IndexSyncResult:
+    def sync(
+        self,
+        chunks: Sequence[RetrievalChunk],
+        *,
+        on_progress: Optional[Callable[[str, int, int], None]] = None,
+        should_cancel: Optional[Callable[[], bool]] = None,
+    ) -> IndexSyncResult:
         from qdrant_client import models
 
+        if not self._sync_lock.acquire(blocking=False):
+            raise IndexBusyError("本地向量索引已有同步任务正在运行。")
+
         started = time.perf_counter()
-        self._ensure_collection()
-        client = self._qdrant()
-        current = {
-            str(point.payload.get("chunkId")): point
-            for point in self._all_points()
-            if point.payload and point.payload.get("chunkId")
-        }
-        incoming = {chunk.id: chunk for chunk in chunks}
-        added_ids = [identifier for identifier in incoming if identifier not in current]
-        updated_ids = [
-            identifier for identifier, chunk in incoming.items()
-            if identifier in current and current[identifier].payload.get("chunkHash") != chunk_sha256(chunk)
-        ]
-        removed_ids = [identifier for identifier in current if identifier not in incoming]
-        changed_ids = added_ids + updated_ids
+        commit_started = False
 
-        if changed_ids:
-            vectors = self.provider.encode_documents([chunk_embedding_text(incoming[item]) for item in changed_ids])
-            points = [
-                models.PointStruct(
-                    id=_point_id(identifier),
-                    vector=vector.tolist(),
-                    payload=_payload(incoming[identifier]),
+        def report(stage: str, completed: int, total: int) -> None:
+            if on_progress is not None:
+                on_progress(stage, completed, total)
+
+        def cancel_requested() -> bool:
+            return should_cancel is not None and should_cancel()
+
+        try:
+            report("preparing", 0, len(chunks))
+            if cancel_requested():
+                raise IndexSyncCancelled("本地向量索引同步已取消。")
+
+            with self._operation_lock:
+                start_generation = self._mutation_generation
+                previous_meta = self._read_meta()
+                client = self._qdrant()
+                incompatible_collection = False
+                if client.collection_exists(COLLECTION_NAME):
+                    info = client.get_collection(COLLECTION_NAME)
+                    vectors = info.config.params.vectors
+                    incompatible_collection = getattr(vectors, "size", None) != self.provider.dimensions
+                current = {} if incompatible_collection else {
+                    str(point.payload.get("chunkId")): point
+                    for point in self._all_points()
+                    if point.payload and point.payload.get("chunkId")
+                }
+
+            incoming = {chunk.id: chunk for chunk in chunks}
+            model_checksum = getattr(self.provider, "checksum", None)
+            force_reencode = (
+                incompatible_collection
+                or previous_meta.get("syncState") in {"committing", "failed"}
+                or (
+                    bool(previous_meta.get("fingerprint"))
+                    and (
+                    previous_meta.get("model") != self.provider.name
+                    or previous_meta.get("dimensions") != self.provider.dimensions
+                    or previous_meta.get("modelChecksum") != model_checksum
+                    )
                 )
-                for identifier, vector in zip(changed_ids, vectors)
-            ]
-            client.upsert(collection_name=COLLECTION_NAME, points=points, wait=True)
-        if removed_ids:
-            client.delete(
-                collection_name=COLLECTION_NAME,
-                points_selector=models.PointIdsList(points=[_point_id(identifier) for identifier in removed_ids]),
-                wait=True,
             )
+            added_ids = [identifier for identifier in incoming if identifier not in current]
+            updated_ids = [
+                identifier for identifier, chunk in incoming.items()
+                if identifier in current and (
+                    force_reencode
+                    or current[identifier].payload.get("chunkHash") != chunk_sha256(chunk)
+                )
+            ]
+            removed_ids = [identifier for identifier in current if identifier not in incoming]
+            changed_ids = added_ids + updated_ids
+            report("preparing", len(chunks), len(chunks))
 
-        built_at = datetime.now(timezone.utc).isoformat()
-        fingerprint = corpus_sha256(chunks)
-        meta = {
-            "fingerprint": fingerprint,
-            "chunkCount": len(chunks),
-            "model": self.provider.name,
-            "dimensions": self.provider.dimensions,
-            "builtAt": built_at,
-            "modelChecksum": getattr(self.provider, "checksum", None),
-        }
-        self._write_meta(meta)
-        return IndexSyncResult(
-            fingerprint=fingerprint,
-            added=len(added_ids),
-            updated=len(updated_ids),
-            removed=len(removed_ids),
-            unchanged=len(chunks) - len(changed_ids),
-            chunk_count=len(chunks),
-            duration_ms=round((time.perf_counter() - started) * 1_000, 3),
-            built_at=built_at,
-        )
+            encoded_batches: list[np.ndarray] = []
+            report("embedding", 0, len(changed_ids))
+            for offset in range(0, len(changed_ids), 16):
+                if cancel_requested():
+                    raise IndexSyncCancelled("本地向量索引同步已取消。")
+                batch_ids = changed_ids[offset:offset + 16]
+                encoded_batches.append(self.provider.encode_documents([
+                    chunk_embedding_text(incoming[identifier]) for identifier in batch_ids
+                ]))
+                report("embedding", min(offset + len(batch_ids), len(changed_ids)), len(changed_ids))
+
+            if cancel_requested():
+                raise IndexSyncCancelled("本地向量索引同步已取消。")
+            encoded = np.concatenate(encoded_batches, axis=0) if encoded_batches else np.empty(
+                (0, self.provider.dimensions),
+                dtype=np.float32,
+            )
+            fingerprint = corpus_sha256(chunks)
+            built_at = datetime.now(timezone.utc).isoformat()
+            changed_index = bool(changed_ids or removed_ids or force_reencode)
+            commit_total = max(1, len(changed_ids) + len(removed_ids))
+            report("committing", 0, commit_total)
+
+            with self._operation_lock:
+                if self._mutation_generation != start_generation:
+                    raise IndexBusyError("索引在同步准备期间已被其他操作修改，请重试。")
+                if changed_index:
+                    self._write_meta({
+                        "syncState": "committing",
+                        "startedAt": built_at,
+                        "previousFingerprint": previous_meta.get("fingerprint"),
+                        "model": self.provider.name,
+                        "dimensions": self.provider.dimensions,
+                        "modelChecksum": model_checksum,
+                    })
+                    commit_started = True
+                    self._invalidate_query_cache()
+                    self._ensure_collection()
+                    committed = 0
+                    for offset in range(0, len(changed_ids), 128):
+                        batch_ids = changed_ids[offset:offset + 128]
+                        points = [
+                            models.PointStruct(
+                                id=_point_id(identifier),
+                                vector=vector.tolist(),
+                                payload=_payload(incoming[identifier]),
+                            )
+                            for identifier, vector in zip(batch_ids, encoded[offset:offset + len(batch_ids)])
+                        ]
+                        client.upsert(collection_name=COLLECTION_NAME, points=points, wait=True)
+                        committed += len(batch_ids)
+                        report("committing", committed, commit_total)
+                    if removed_ids:
+                        client.delete(
+                            collection_name=COLLECTION_NAME,
+                            points_selector=models.PointIdsList(points=[_point_id(identifier) for identifier in removed_ids]),
+                            wait=True,
+                        )
+                        committed += len(removed_ids)
+                        report("committing", committed, commit_total)
+
+                meta = {
+                    "syncState": "ready",
+                    "fingerprint": fingerprint,
+                    "chunkCount": len(chunks),
+                    "model": self.provider.name,
+                    "dimensions": self.provider.dimensions,
+                    "builtAt": built_at,
+                    "modelChecksum": model_checksum,
+                }
+                self._write_meta(meta)
+                self._mutation_generation += 1
+                if not changed_index and previous_meta.get("fingerprint") != fingerprint:
+                    self._invalidate_query_cache()
+
+            report("completed", commit_total, commit_total)
+            return IndexSyncResult(
+                fingerprint=fingerprint,
+                added=len(added_ids),
+                updated=len(updated_ids),
+                removed=len(removed_ids),
+                unchanged=len(chunks) - len(changed_ids),
+                chunk_count=len(chunks),
+                duration_ms=round((time.perf_counter() - started) * 1_000, 3),
+                built_at=built_at,
+            )
+        except (IndexSyncCancelled, IndexBusyError):
+            raise
+        except Exception:
+            if commit_started:
+                with self._operation_lock:
+                    try:
+                        self._write_meta({
+                            "syncState": "failed",
+                            "failedAt": datetime.now(timezone.utc).isoformat(),
+                            "model": self.provider.name,
+                            "dimensions": self.provider.dimensions,
+                            "modelChecksum": getattr(self.provider, "checksum", None),
+                        })
+                    finally:
+                        self._mutation_generation += 1
+                        self._invalidate_query_cache()
+            raise
+        finally:
+            self._sync_lock.release()
 
     def status(self) -> dict:
-        meta = self._read_meta()
-        client = self._qdrant()
-        count = 0
-        if client.collection_exists(COLLECTION_NAME):
-            count = int(client.count(COLLECTION_NAME, exact=True).count)
-        return {
-            "ready": bool(meta.get("fingerprint")) and count > 0,
-            "chunkCount": count,
-            "fingerprint": meta.get("fingerprint"),
-            "model": self.provider.name,
-            "dimensions": self.provider.dimensions,
-            "modelAvailable": self.provider.available,
-            "modelChecksum": getattr(self.provider, "checksum", None),
-            "builtAt": meta.get("builtAt"),
-            "storage": "memory" if self.memory else str(self.path),
-        }
+        with self._operation_lock:
+            meta = self._read_meta()
+            client = self._qdrant()
+            count = 0
+            if client.collection_exists(COLLECTION_NAME):
+                count = int(client.count(COLLECTION_NAME, exact=True).count)
+            sync_state = str(meta.get("syncState") or ("ready" if meta.get("fingerprint") else "idle"))
+            recovery_required = sync_state in {"committing", "failed"}
+            return {
+                "ready": not recovery_required and bool(meta.get("fingerprint")) and count > 0,
+                "chunkCount": count,
+                "fingerprint": meta.get("fingerprint"),
+                "model": self.provider.name,
+                "dimensions": self.provider.dimensions,
+                "modelAvailable": self.provider.available,
+                "modelChecksum": getattr(self.provider, "checksum", None),
+                "builtAt": meta.get("builtAt"),
+                "storage": "memory" if self.memory else str(self.path),
+                "syncState": sync_state,
+                "recoveryRequired": recovery_required,
+            }
 
     def chunks(self) -> list[RetrievalChunk]:
-        return [_chunk_from_payload(point.payload) for point in self._all_points() if point.payload]
+        with self._operation_lock:
+            return [_chunk_from_payload(point.payload) for point in self._all_points() if point.payload]
 
     def search(
         self,
@@ -349,9 +595,39 @@ class LocalVectorIndex:
         source_ids: Optional[Sequence[str]] = None,
     ) -> SearchOutput:
         started = time.perf_counter()
-        meta = self._read_meta()
-        if not meta.get("fingerprint"):
-            raise IndexNotReadyError("本地向量索引尚未构建。")
+        with self._operation_lock:
+            meta = self._read_meta()
+            if not meta.get("fingerprint") or meta.get("syncState") in {"committing", "failed"}:
+                raise IndexNotReadyError("本地向量索引尚未构建或需要重新同步。")
+            cache_key = self._query_cache_key(
+                fingerprint=str(meta["fingerprint"]),
+                query=query,
+                top_k=top_k,
+                apply_threshold=apply_threshold,
+                source_ids=source_ids,
+            )
+            cached = self._cached_search(cache_key, started)
+            if cached is not None:
+                return cached
+            output = self._search_uncached(
+                query,
+                top_k,
+                apply_threshold=apply_threshold,
+                source_ids=source_ids,
+                started=started,
+            )
+            self._store_cached_search(cache_key, output)
+            return output
+
+    def _search_uncached(
+        self,
+        query: str,
+        top_k: int,
+        *,
+        apply_threshold: bool,
+        source_ids: Optional[Sequence[str]],
+        started: float,
+    ) -> SearchOutput:
         allowed_source_ids = set(source_ids) if source_ids is not None else None
         corpus = self.chunks()
         if allowed_source_ids is not None:
@@ -433,16 +709,27 @@ class LocalVectorIndex:
         )
 
     def clear(self) -> None:
-        client = self._qdrant()
-        if client.collection_exists(COLLECTION_NAME):
-            client.delete_collection(COLLECTION_NAME)
-        self._write_meta({})
+        if not self._sync_lock.acquire(blocking=False):
+            raise IndexBusyError("索引同步期间不能清除向量索引，请先取消任务。")
+        try:
+            with self._operation_lock:
+                client = self._qdrant()
+                if client.collection_exists(COLLECTION_NAME):
+                    client.delete_collection(COLLECTION_NAME)
+                self._write_meta({})
+                self._mutation_generation += 1
+                self._invalidate_query_cache()
+        finally:
+            self._sync_lock.release()
 
     def close(self) -> None:
-        client = self._client
-        self._client = None
-        if client is not None and hasattr(client, "close"):
-            client.close()
+        with self._sync_lock:
+            with self._operation_lock:
+                client = self._client
+                self._client = None
+                self._invalidate_query_cache()
+                if client is not None and hasattr(client, "close"):
+                    client.close()
 
 
 semantic_index = LocalVectorIndex()

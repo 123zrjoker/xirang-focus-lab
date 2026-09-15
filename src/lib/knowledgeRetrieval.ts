@@ -50,14 +50,41 @@ export interface RetrievalIndexStatus {
   modelChecksum: string | null
   builtAt: string | null
   storage: string
+  syncState?: 'idle' | 'ready' | 'committing' | 'failed'
+  recoveryRequired?: boolean
 }
 
-export interface RetrievalIndexSync extends RetrievalIndexStatus {
+export interface RetrievalIndexSyncResult {
+  fingerprint: string
+  chunkCount: number
+  model: string
+  dimensions: number
   added: number
   updated: number
   removed: number
   unchanged: number
   durationMs: number
+  builtAt: string
+}
+
+export type RetrievalIndexSync = RetrievalIndexStatus & RetrievalIndexSyncResult
+
+export type RetrievalIndexTaskState = 'idle' | 'queued' | 'running' | 'cancel_requested' | 'succeeded' | 'failed' | 'cancelled'
+
+export interface RetrievalIndexTask {
+  taskId: string | null
+  state: RetrievalIndexTaskState
+  stage: string
+  progress: number
+  completedItems: number
+  totalItems: number
+  cancelRequested: boolean
+  cancellable: boolean
+  createdAt: string | null
+  startedAt: string | null
+  finishedAt: string | null
+  result: RetrievalIndexSyncResult | null
+  error: string | null
 }
 
 export interface RetrievalScoreBreakdown {
@@ -246,6 +273,31 @@ export async function syncKnowledgeIndex(chunks: KnowledgeChunk[]): Promise<Retr
   if (!response.ok) throw new Error(await responseError(response))
   const payload = await response.json() as RetrievalIndexSync
   return { ...payload, ready: true, modelAvailable: true, modelChecksum: null, storage: 'server/data/qdrant' }
+}
+
+export async function startKnowledgeIndexTask(chunks: KnowledgeChunk[]): Promise<RetrievalIndexTask> {
+  if (!chunks.length) throw new Error('知识库中还没有可构建索引的文本块。')
+  const response = await request('/api/index/tasks', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ chunks: chunks.map(chunkPayload) }),
+  }, 30_000)
+  if (!response.ok) throw new Error(await responseError(response))
+  return response.json() as Promise<RetrievalIndexTask>
+}
+
+export async function getKnowledgeIndexTask(): Promise<RetrievalIndexTask> {
+  const response = await request('/api/index/tasks/current', undefined, 5_000)
+  if (!response.ok) throw new Error(await responseError(response))
+  return response.json() as Promise<RetrievalIndexTask>
+}
+
+export async function cancelKnowledgeIndexTask(taskId: string): Promise<RetrievalIndexTask> {
+  const response = await request(`/api/index/tasks/${encodeURIComponent(taskId)}`, {
+    method: 'DELETE',
+  }, 5_000)
+  if (!response.ok) throw new Error(await responseError(response))
+  return response.json() as Promise<RetrievalIndexTask>
 }
 
 export async function clearKnowledgeIndex(): Promise<RetrievalIndexStatus> {

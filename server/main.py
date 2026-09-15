@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import atexit
 import json
-from threading import RLock
+from threading import Lock
 from typing import Literal, Optional
 
 from fastapi import FastAPI, HTTPException
@@ -22,10 +22,12 @@ from .retrieval import (
 )
 from .semantic import (
     VECTOR_ENGINE_NAME,
+    IndexBusyError,
     IndexNotReadyError,
     ModelUnavailableError,
     semantic_index,
 )
+from .index_tasks import IndexSyncTaskManager, IndexTaskConflictError
 from .hybrid import RERANK_ENGINE_NAME, RRF_ENGINE_NAME, hybrid_search, reranker_provider
 from .generation import (
     DeepSeekChatProvider,
@@ -146,6 +148,8 @@ class IndexStatusResponse(ApiModel):
     model_checksum: Optional[str]
     built_at: Optional[str]
     storage: str
+    sync_state: Literal["idle", "ready", "committing", "failed"] = "idle"
+    recovery_required: bool = False
 
 
 class IndexSyncResponse(ApiModel):
@@ -159,6 +163,22 @@ class IndexSyncResponse(ApiModel):
     built_at: str
     model: str
     dimensions: int
+
+
+class IndexTaskResponse(ApiModel):
+    task_id: Optional[str]
+    state: Literal["idle", "queued", "running", "cancel_requested", "succeeded", "failed", "cancelled"]
+    stage: str
+    progress: float = Field(ge=0, le=100)
+    completed_items: int = Field(ge=0)
+    total_items: int = Field(ge=0)
+    cancel_requested: bool
+    cancellable: bool
+    created_at: Optional[str]
+    started_at: Optional[str]
+    finished_at: Optional[str]
+    result: Optional[IndexSyncResponse]
+    error: Optional[str]
 
 
 class RagAnswerRequest(ApiModel):
@@ -276,10 +296,12 @@ agent_checkpoint_path = resolve_checkpoint_path()
 agent_checkpointer = build_sqlite_checkpointer(agent_checkpoint_path)
 agent_trace_recorder = TraceRecorder(agent_checkpoint_path)
 agent_prompt_registry = build_prompt_registry()
-agent_operation_lock = RLock()
+agent_operation_lock = Lock()
+index_task_manager = IndexSyncTaskManager(semantic_index)
 
 
 def close_agent_runtime() -> None:
+    index_task_manager.shutdown(wait=True)
     semantic_index.close()
     agent_trace_recorder.close()
     agent_checkpointer.conn.close()
@@ -326,6 +348,10 @@ def diagnostics() -> dict:
         "agent": {
             "graphVersion": AGENT_GRAPH_VERSION,
             "operationMode": "serialized",
+        },
+        "retrieval": {
+            "cache": semantic_index.cache_status(),
+            "indexTask": index_task_manager.status(),
         },
     }
 
@@ -619,6 +645,8 @@ def sync_index(request: IndexSyncRequest) -> IndexSyncResponse:
         raise HTTPException(status_code=422, detail="知识库中还没有可构建索引的文本块。")
     try:
         result = semantic_index.sync(chunks)
+    except IndexBusyError as error:
+        raise HTTPException(status_code=409, detail=str(error)) from error
     except ModelUnavailableError as error:
         raise HTTPException(status_code=503, detail=str(error)) from error
     return IndexSyncResponse(
@@ -628,9 +656,36 @@ def sync_index(request: IndexSyncRequest) -> IndexSyncResponse:
     )
 
 
+@app.post("/api/index/tasks", response_model=IndexTaskResponse, status_code=202)
+def start_index_task(request: IndexSyncRequest) -> IndexTaskResponse:
+    chunks = request_chunks(request.chunks)
+    if not chunks:
+        raise HTTPException(status_code=422, detail="知识库中还没有可构建索引的文本块。")
+    try:
+        return IndexTaskResponse.model_validate(index_task_manager.start(chunks))
+    except (IndexTaskConflictError, IndexBusyError) as error:
+        raise HTTPException(status_code=409, detail=str(error)) from error
+
+
+@app.get("/api/index/tasks/current", response_model=IndexTaskResponse)
+def get_index_task() -> IndexTaskResponse:
+    return IndexTaskResponse.model_validate(index_task_manager.status())
+
+
+@app.delete("/api/index/tasks/{task_id}", response_model=IndexTaskResponse)
+def cancel_index_task(task_id: str) -> IndexTaskResponse:
+    try:
+        return IndexTaskResponse.model_validate(index_task_manager.cancel(task_id))
+    except KeyError as error:
+        raise HTTPException(status_code=404, detail=str(error)) from error
+
+
 @app.delete("/api/index", response_model=IndexStatusResponse)
 def clear_index() -> IndexStatusResponse:
-    semantic_index.clear()
+    try:
+        semantic_index.clear()
+    except IndexBusyError as error:
+        raise HTTPException(status_code=409, detail=str(error)) from error
     return IndexStatusResponse(**semantic_index.status())
 
 

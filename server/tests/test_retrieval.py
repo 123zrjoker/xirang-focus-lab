@@ -84,6 +84,8 @@ def test_api_is_stateless_and_returns_camel_case_contract() -> None:
     assert diagnostics.status_code == 200
     assert diagnostics.json()["agent"]["operationMode"] == "serialized"
     assert diagnostics.json()["runtime"]["pythonVersion"]
+    assert diagnostics.json()["retrieval"]["cache"]["resultCache"]["capacity"] == 64
+    assert diagnostics.json()["retrieval"]["indexTask"]["state"] == "idle"
     assert response.status_code == 200
     payload = response.json()
     assert payload["engine"] == "bm25-zh-v1"

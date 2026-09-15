@@ -26,6 +26,7 @@
     "eval:agent": ".venv311\\Scripts\\python.exe -m server.evals.agent.run",
     "eval:agent:real": ".venv311\\Scripts\\python.exe -m server.evals.agent.run --real",
     "perf:api": ".venv311\\Scripts\\python.exe -m server.evals.run_performance",
+    "perf:models": ".venv311\\Scripts\\python.exe -m server.evals.run_model_performance",
     "quality:gate": "npm run test && npm run test:desktop && npm run test:api && npm run build && npm run eval:agent && npm run perf:api",
     "quality:security": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/quality_security.ps1",
     "preview": "vite preview",

@@ -1,14 +1,19 @@
 import { useEffect, useState, type FormEvent } from 'react'
 import {
   answerKnowledgeQuestion,
+  cancelKnowledgeIndexTask,
   checkRetrievalService,
   clearKnowledgeIndex,
+  getKnowledgeIndexStatus,
+  getKnowledgeIndexTask,
   searchKnowledge,
-  syncKnowledgeIndex,
+  startKnowledgeIndexTask,
   type KnowledgeRetrievalResponse,
   type RagAnswerResponse,
   type RetrievalHealth,
   type RetrievalIndexStatus,
+  type RetrievalIndexTask,
+  type RetrievalIndexTaskState,
   type RetrievalMode,
 } from '../lib/knowledgeRetrieval'
 import { saveKnowledgeRetrieval, type KnowledgeChunk } from '../lib/knowledgeBase'
@@ -26,6 +31,17 @@ const exampleQueries = [
   '怎样减少专注时的手机分心？',
   '知识库如何处理 PDF？',
 ]
+
+const activeIndexTaskStates = new Set<RetrievalIndexTaskState>(['queued', 'running', 'cancel_requested'])
+
+function indexStageLabel(task: RetrievalIndexTask) {
+  if (task.state === 'cancel_requested') return task.cancellable ? '正在安全取消' : '已进入提交阶段，将完成后停止'
+  if (task.stage === 'queued') return '等待后台任务启动'
+  if (task.stage === 'preparing') return '正在比对索引变化'
+  if (task.stage === 'embedding') return '正在生成本地向量'
+  if (task.stage === 'committing') return '正在安全提交索引'
+  return '正在处理索引'
+}
 
 function confidenceLabel(confidence: KnowledgeRetrievalResponse['confidence']) {
   if (confidence === 'strong') return '较强匹配'
@@ -56,6 +72,7 @@ export function KnowledgeRetrievalLab({ chunks, onStored, refreshKey = 0 }: Know
   const [expandedChunkId, setExpandedChunkId] = useState<string | null>(null)
   const [indexStatus, setIndexStatus] = useState<RetrievalIndexStatus | null>(null)
   const [indexing, setIndexing] = useState(false)
+  const [indexTask, setIndexTask] = useState<RetrievalIndexTask | null>(null)
   const [ragResponse, setRagResponse] = useState<RagAnswerResponse | null>(null)
   const [ragBusy, setRagBusy] = useState<'preview' | 'generate' | null>(null)
   const [ragError, setRagError] = useState<string | null>(null)
@@ -65,9 +82,11 @@ export function KnowledgeRetrievalLab({ chunks, onStored, refreshKey = 0 }: Know
     setServiceState('checking')
     setError(null)
     try {
-      const status = await checkRetrievalService()
+      const [status, task] = await Promise.all([checkRetrievalService(), getKnowledgeIndexTask()])
       setHealth(status)
       setIndexStatus(status.index ?? null)
+      setIndexTask(task)
+      setIndexing(activeIndexTaskStates.has(task.state))
       setServiceState('ready')
     } catch (nextError) {
       setHealth(null)
@@ -80,18 +99,70 @@ export function KnowledgeRetrievalLab({ chunks, onStored, refreshKey = 0 }: Know
     void detectService()
   }, [refreshKey])
 
+  useEffect(() => {
+    const taskId = indexTask?.taskId
+    if (!taskId || !activeIndexTaskStates.has(indexTask.state)) return
+    let disposed = false
+    const timer = globalThis.setInterval(() => {
+      void (async () => {
+        try {
+          const task = await getKnowledgeIndexTask()
+          if (disposed || task.taskId !== taskId) return
+          if (activeIndexTaskStates.has(task.state)) {
+            setIndexTask(task)
+            setIndexing(true)
+            return
+          }
+          globalThis.clearInterval(timer)
+          const status = await getKnowledgeIndexStatus()
+          if (disposed) return
+          setIndexTask(task)
+          setIndexing(false)
+          setIndexStatus(status)
+          if (task.state === 'succeeded') {
+            setMode('vector')
+          } else if (task.state === 'failed') {
+            if (status.recoveryRequired) setMode('keyword')
+            setError(task.error || '向量索引后台任务失败，请重试。')
+          } else if (task.state === 'cancelled') {
+            setError(null)
+          }
+        } catch (nextError) {
+          if (disposed) return
+          globalThis.clearInterval(timer)
+          setIndexing(false)
+          setError(nextError instanceof Error ? nextError.message : '无法读取索引任务进度。')
+        }
+      })()
+    }, 500)
+    return () => {
+      disposed = true
+      globalThis.clearInterval(timer)
+    }
+  }, [indexTask?.taskId, indexTask?.state])
+
   async function buildIndex() {
     setIndexing(true)
     setError(null)
     setRagResponse(null)
     try {
-      const result = await syncKnowledgeIndex(chunks)
-      setIndexStatus(result)
-      setMode('vector')
+      const task = await startKnowledgeIndexTask(chunks)
+      setIndexTask(task)
+      setIndexing(activeIndexTaskStates.has(task.state))
     } catch (nextError) {
       setError(nextError instanceof Error ? nextError.message : '向量索引构建失败。')
-    } finally {
       setIndexing(false)
+    }
+  }
+
+  async function cancelIndexing() {
+    if (!indexTask?.taskId) return
+    try {
+      const task = await cancelKnowledgeIndexTask(indexTask.taskId)
+      setIndexTask(task)
+      setIndexing(activeIndexTaskStates.has(task.state))
+    } catch (nextError) {
+      setError(nextError instanceof Error ? nextError.message : '无法取消索引任务。')
     }
   }
 
@@ -186,7 +257,11 @@ export function KnowledgeRetrievalLab({ chunks, onStored, refreshKey = 0 }: Know
           <div>
             <span className={`retrieval-index-mark ${indexStatus?.ready ? 'ready' : ''}`}>V</span>
             <p>
-              <strong>{indexStatus?.ready ? `本地向量索引 · ${indexStatus.chunkCount} 块` : '本地向量索引尚未构建'}</strong>
+              <strong>
+                {indexing && indexTask
+                  ? `${indexStageLabel(indexTask)} · ${indexTask.progress.toFixed(0)}%`
+                  : indexStatus?.ready ? `本地向量索引 · ${indexStatus.chunkCount} 块` : '本地向量索引尚未构建'}
+              </strong>
               <small>
                 {indexStatus?.model ?? health?.semanticEngine ?? 'BAAI/bge-small-zh-v1.5'}
                 {indexStatus?.dimensions ? ` · ${indexStatus.dimensions} 维` : ''}
@@ -199,9 +274,22 @@ export function KnowledgeRetrievalLab({ chunks, onStored, refreshKey = 0 }: Know
             <button className="button secondary" type="button" disabled={indexing || !chunks.length || indexStatus?.modelAvailable === false} onClick={() => void buildIndex()}>
               {indexing ? '正在处理…' : indexStatus?.ready ? '增量同步索引' : '构建本地索引'}
             </button>
+            {indexing && indexTask?.taskId && (
+              <button type="button" onClick={() => void cancelIndexing()} disabled={!indexTask.cancellable || indexTask.cancelRequested}>
+                {indexTask.cancelRequested ? '已请求取消' : indexTask.cancellable ? '取消任务' : '正在提交'}
+              </button>
+            )}
             {indexStatus?.ready && <button type="button" onClick={() => void removeIndex()} disabled={indexing}>清除向量</button>}
           </div>
+          {indexing && indexTask && (
+            <div className="retrieval-index-progress" aria-live="polite">
+              <progress max="100" value={indexTask.progress} />
+              <small>{indexStageLabel(indexTask)}{indexTask.totalItems > 0 ? ` · ${indexTask.completedItems}/${indexTask.totalItems}` : ''}</small>
+            </div>
+          )}
           {indexStatus?.modelAvailable === false && <em>本机模型尚未准备好，请运行 scripts/download_retrieval_models.ps1。</em>}
+          {indexStatus?.recoveryRequired && <em>上次索引提交未完整结束，当前已失败关闭；请重新同步后再使用向量检索。</em>}
+          {indexTask?.state === 'cancelled' && <em>索引同步已取消，原有可用索引未被修改。</em>}
         </div>
       )}
 

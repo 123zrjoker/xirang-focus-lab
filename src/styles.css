@@ -1076,6 +1076,10 @@ p, h1, h2, h3 { margin-top: 0; }
 .retrieval-index-actions { display: flex; align-items: center; gap: 8px; }
 .retrieval-index-actions .button { padding: 7px 10px; font-size: 8px; }
 .retrieval-index-actions > button:not(.button) { padding: 4px 0; border: 0; background: transparent; color: #9b5146; cursor: pointer; font-size: 7px; }
+.retrieval-index-actions > button:disabled { cursor: default; opacity: .55; }
+.retrieval-index-progress { grid-column: 1 / 3; display: grid; grid-template-columns: minmax(120px, 1fr) auto; align-items: center; gap: 8px; }
+.retrieval-index-progress progress { width: 100%; height: 5px; overflow: hidden; border: 0; border-radius: 999px; accent-color: var(--green); }
+.retrieval-index-progress small { color: var(--muted); font-size: 7px; white-space: nowrap; }
 .retrieval-query-form { display: grid; grid-template-columns: minmax(0, 1fr) 118px 88px auto; align-items: end; gap: 9px; margin-top: 17px; }
 .retrieval-query-form label { min-width: 0; display: flex; flex-direction: column; gap: 6px; }
 .retrieval-query-form label > span { color: var(--muted); font-size: 8px; font-weight: 700; }
@@ -1777,7 +1781,7 @@ html.motion-off *, html.motion-off *::before, html.motion-off *::after {
   .retrieval-service-badge { align-self: flex-start; }
   .retrieval-index-panel { grid-template-columns: 1fr; align-items: flex-start; }
   .retrieval-index-actions { justify-content: flex-start; }
-  .retrieval-index-panel > em { grid-column: 1; }
+  .retrieval-index-panel > em, .retrieval-index-progress { grid-column: 1; }
   .retrieval-query-form { grid-template-columns: 1fr 1fr; }
   .retrieval-query-form > label:first-child { grid-column: 1 / 3; }
   .retrieval-query-form .button { width: 100%; }

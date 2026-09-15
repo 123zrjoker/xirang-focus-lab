@@ -1,6 +1,6 @@
 # 息壤 · 注意力训练与专注启动实验室
 
-0.7.0 工程质量与可靠性正在实施：Windows CI 已接入前端、Electron、API、生产构建、Fake Agent Eval 和 API 性能基线；npm 与 Python 依赖会生成 CycloneDX SBOM 并经过安全审计。Electron sidecar 的启动/停止/重启已串行化且输出 JSONL 日志，FastAPI 新增不暴露凭据的本机诊断接口，共享 SQLite Checkpoint 操作也增加进程内并发保护。当前依赖已升级并通过真实 BGE 与 ONNX reranker 烟雾测试。
+0.7.0 工程质量与可靠性正在实施：Windows CI 已接入前端、Electron、API、生产构建、Fake Agent Eval 和 API/SSE 性能基线；npm 与 Python 依赖会生成 CycloneDX SBOM 并经过安全审计。Electron sidecar 的启动/停止/重启已串行化且输出 JSONL 日志，FastAPI 新增不暴露凭据的本机诊断接口，共享 SQLite Checkpoint 操作也增加进程内并发保护。BGE 查询向量和索引检索结果使用实例隔离的有界内存 LRU；向量索引同步已进入单任务后台状态机，支持进度、提交前取消、失败关闭和重试恢复。真实本地模型/资源基线已通过，下一步重建并回归 0.7.0 桌面产物。
 
 0.6.0 桌面端一体化已按当前 Windows 环境结果完成阶段验收：Electron 主进程会为每次启动分配随机本机回环端口，自动启动、探活、监控并关闭 FastAPI sidecar；沙箱化 preload 只向页面暴露 API 地址、运行状态和重启操作，不开放 Node 能力。Checkpoint、DPAPI 凭据、向量索引和日志统一使用稳定的本机数据目录，模型作为只读资源随桌面包提供。独立干净 Windows 复验不被当前开发机结果替代，已保留到 0.9.0 发布候选门禁。
 
@@ -128,10 +128,11 @@ npm run eval:generation:real
 npm run eval:agent
 npm run eval:agent:real -- --allow-paid-api
 npm run perf:api
+npm run perf:models
 npm run quality:gate
 ```
 
-真实生成与 Agent 保留集评测需要先在设置页保存 DeepSeek Key；Agent 命令还要求 `--allow-paid-api` 显式确认付费调用。命令只读取本机 DPAPI 密文，报告不会记录 Key。已冻结报告见 [`0.4.4 RAG 生成评测`](artifacts/evals/0.4.4-generation-real-eval.md)、[`0.5.2 Agent Fake Eval`](artifacts/evals/0.5.2-agent-fake-eval.md) 和 [`0.5.2 Agent DeepSeek 保留集`](artifacts/evals/0.5.2-agent-deepseek-holdout.md)。
+真实生成与 Agent 保留集评测需要先在设置页保存 DeepSeek Key；Agent 命令还要求 `--allow-paid-api` 显式确认付费调用。命令只读取本机 DPAPI 密文，报告不会记录 Key。`perf:models` 只读取已经下载到 `.model-cache` 的固定本地模型，不调用网络或付费 API。已冻结报告见 [`0.4.4 RAG 生成评测`](artifacts/evals/0.4.4-generation-real-eval.md)、[`0.5.2 Agent Fake Eval`](artifacts/evals/0.5.2-agent-fake-eval.md) 和 [`0.5.2 Agent DeepSeek 保留集`](artifacts/evals/0.5.2-agent-deepseek-holdout.md)。
 
 首次执行依赖安全门禁时创建独立审计环境；该命令生成 npm/Python CycloneDX SBOM 和可追踪的 Markdown 摘要，不调用付费模型：
 
