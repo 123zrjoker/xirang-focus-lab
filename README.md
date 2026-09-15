@@ -1,6 +1,6 @@
 # 息壤 · 注意力训练与专注启动实验室
 
-0.7.0 工程质量与可靠性正在实施：Windows CI 已接入前端、Electron、API、生产构建、Fake Agent Eval 和 API/SSE 性能基线；npm 与 Python 依赖会生成 CycloneDX SBOM 并经过安全审计。Electron sidecar 的启动/停止/重启已串行化且输出 JSONL 日志，FastAPI 新增不暴露凭据的本机诊断接口，共享 SQLite Checkpoint 操作也增加进程内并发保护。BGE 查询向量和索引检索结果使用实例隔离的有界内存 LRU；向量索引同步已进入单任务后台状态机，支持进度、提交前取消、失败关闭和重试恢复。真实本地模型/资源基线已通过，下一步重建并回归 0.7.0 桌面产物。
+0.7.0 工程质量与可靠性已完成当前 Windows 环境冻结：Windows CI 配置、CycloneDX SBOM、安全审计、结构化诊断、Electron/Agent 并发保护、两级有界查询缓存、可取消索引后台任务，以及 API/SSE/真实本地模型/资源门禁均已建立。0.7.0 sidecar、unpacked、NSIS 与 Portable 已全量重建并通过本机启动、后台索引、退出回收、安装/卸载回归，SHA-256 已记录；阶段关闭只剩分支推送后的远端 Windows CI 首次运行证据。
 
 0.6.0 桌面端一体化已按当前 Windows 环境结果完成阶段验收：Electron 主进程会为每次启动分配随机本机回环端口，自动启动、探活、监控并关闭 FastAPI sidecar；沙箱化 preload 只向页面暴露 API 地址、运行状态和重启操作，不开放 Node 能力。Checkpoint、DPAPI 凭据、向量索引和日志统一使用稳定的本机数据目录，模型作为只读资源随桌面包提供。独立干净 Windows 复验不被当前开发机结果替代，已保留到 0.9.0 发布候选门禁。
 
@@ -184,7 +184,7 @@ npm run desktop:dist
 powershell -NoProfile -ExecutionPolicy Bypass -File scripts\smoke_installed_desktop.ps1
 ```
 
-输出文件位于 `release/`。安装版会创建桌面和开始菜单快捷方式；便携版无需安装即可运行。打包产物内含 Python sidecar 和固定版本本地模型，目标机器不需要安装 Python、创建虚拟环境或手动启动 API。
+输出文件位于 `release/`。安装版会创建桌面和开始菜单快捷方式；便携版无需安装即可运行。打包产物内含 Python sidecar 和固定版本本地模型，目标机器不需要安装 Python、创建虚拟环境或手动启动 API。0.7.0 的本机冻结结果、启动时间与 SHA-256 见 [`0.7.0 桌面端冻结验收记录`](artifacts/evals/0.7.0-desktop-acceptance.md)。
 
 第一版本地构建尚未配置商业代码签名证书，因此 Windows SmartScreen 可能显示“未知发布者”。自用时可核对文件来源和 SHA-256 后运行；公开分发前应购买并配置 Windows 代码签名证书。
 
