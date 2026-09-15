@@ -5,7 +5,12 @@ $ErrorActionPreference = 'Stop'
 $projectRoot = Split-Path -Parent $PSScriptRoot
 $unpackedRoot = Join-Path $projectRoot 'release\win-unpacked'
 $appExe = if ($ExecutablePath) {
-  Get-Item -LiteralPath (Join-Path $projectRoot $ExecutablePath)
+  $resolvedExecutable = if ([System.IO.Path]::IsPathRooted($ExecutablePath)) {
+    $ExecutablePath
+  } else {
+    Join-Path $projectRoot $ExecutablePath
+  }
+  Get-Item -LiteralPath $resolvedExecutable
 } else {
   Get-ChildItem -LiteralPath $unpackedRoot -Filter '*.exe' -File |
     Where-Object { $_.Name -notin @('elevate.exe', 'crashpad_handler.exe') } |

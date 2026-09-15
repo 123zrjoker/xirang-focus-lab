@@ -166,6 +166,12 @@ npm run desktop:smoke:packaged
 npm run desktop:dist
 ```
 
+在受控测试目录执行 Setup 静默安装、整体启动验收与静默卸载：
+
+```bash
+powershell -NoProfile -ExecutionPolicy Bypass -File scripts\smoke_installed_desktop.ps1
+```
+
 输出文件位于 `release/`。安装版会创建桌面和开始菜单快捷方式；便携版无需安装即可运行。打包产物内含 Python sidecar 和固定版本本地模型，目标机器不需要安装 Python、创建虚拟环境或手动启动 API。
 
 第一版本地构建尚未配置商业代码签名证书，因此 Windows SmartScreen 可能显示“未知发布者”。自用时可核对文件来源和 SHA-256 后运行；公开分发前应购买并配置 Windows 代码签名证书。
