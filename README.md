@@ -1,5 +1,7 @@
 # 息壤 · 注意力训练与专注启动实验室
 
+0.6.0 桌面端一体化候选版已完成本机实现与自动化验收：Electron 主进程会为每次启动分配随机本机回环端口，自动启动、探活、监控并关闭 FastAPI sidecar；沙箱化 preload 只向页面暴露 API 地址、运行状态和重启操作，不开放 Node 能力。Checkpoint、DPAPI 凭据、向量索引和日志统一使用稳定的本机数据目录，模型作为只读资源随桌面包提供。设置页会显示服务状态；完整 JSON 备份现已覆盖应用记录与 IndexedDB 知识库，同时继续排除明文 Key、可重建向量索引和临时 Agent 线程。正式冻结前仍需在独立干净 Windows 用户环境完成安装、卸载与业务全链路人工验收。
+
 0.5.2 完成独立 Agent Evaluation Harness：`AgentHarness.evaluate()` 可加载带 SHA-256 与版本号的固定数据集，批量复现工具选择/顺序/参数字段、计划结构、完整轨迹、人工审批、SQLite 恢复、修订冲突、幂等副作用、引用、提示注入、故障恢复、延迟、tokens 与成本。15 条 Fake Eval 安全与质量门禁全部通过；5 条真实 DeepSeek 保留集全部通过，输入/输出为 11,274 / 2,176 tokens，峰时价格口径成本上界约 $0.00505，P50/P95 为 15.842/16.815 秒。0.5.1 Checkpoint 可继续恢复，未知图版本会失败关闭；Trace 追踪 Prompt/工具/图版本并同时按字段名和内容模式脱敏凭据。
 
 0.5.1 完成首个可恢复的人工审批闭环：LangGraph 运行状态与脱敏 Trace 持久化到本机 SQLite，服务重启后可凭稳定线程 ID 回到审批点；计划支持同意、修改和拒绝，批准后由后端生成带状态修订号和确定性 `actionId` 的 `save_plan` / `start_focus` Mutation Intent，前端原子校验、幂等执行并回传确认。今日页通过 SSE 展示读取、工具、规划、校验、审批恢复、执行确认和完成/失败进度；到达审批点后，即使关闭页面或重启服务也能恢复。计划只会在批准且修订号未冲突时保存，专注也只会在服务端确认后启动。主应用数据格式升级为 v11，用于保存最近 50 份已批准计划。
@@ -131,7 +133,7 @@ npm run eval:agent:real -- --allow-paid-api
 
 ## Windows 桌面程序
 
-直接构建并打开桌面程序：
+开发环境中直接构建并打开桌面程序。Electron 会自动使用 `.venv311` 启动 API，不需要另开终端运行 `dev:api`：
 
 ```bash
 npm run desktop
@@ -143,13 +145,28 @@ npm run desktop
 npm run desktop:open
 ```
 
+构建并验证独立 Python sidecar：
+
+```bash
+.venv311\Scripts\python.exe -m pip install -r server\requirements-build.txt
+npm run desktop:backend
+npm run desktop:smoke:sidecar
+```
+
+生成可直接运行的 Windows 应用目录：
+
+```bash
+npm run desktop:pack
+npm run desktop:smoke:packaged
+```
+
 生成 Windows 安装版和免安装便携版：
 
 ```bash
 npm run desktop:dist
 ```
 
-输出文件位于 `release/`。安装版会创建桌面和开始菜单快捷方式；便携版无需安装即可运行。
+输出文件位于 `release/`。安装版会创建桌面和开始菜单快捷方式；便携版无需安装即可运行。打包产物内含 Python sidecar 和固定版本本地模型，目标机器不需要安装 Python、创建虚拟环境或手动启动 API。
 
 第一版本地构建尚未配置商业代码签名证书，因此 Windows SmartScreen 可能显示“未知发布者”。自用时可核对文件来源和 SHA-256 后运行；公开分发前应购买并配置 Windows 代码签名证书。
 
@@ -157,11 +174,12 @@ npm run desktop:dist
 
 - 训练、专注、待办、笔记与设置继续使用浏览器 `localStorage`；TXT、Markdown、DOCX、文字型 PDF 的提取正文、授权和文本块使用独立的 IndexedDB v2，不需要账号或服务器。
 - DOCX/PDF 的原始二进制文件不会保存；扫描型 PDF 当前没有 OCR 能力，复杂多栏 PDF 的读取顺序取决于文件文字层。
-- “设置”页支持导出应用数据 JSON、导入恢复、导出 CSV 和二次确认清空。
-- JSON 备份可以在浏览器版与桌面版之间手动迁移训练、专注、计划、待办、笔记和设置；当前不包含 IndexedDB 中的知识库文档。
+- “设置”页支持导出完整备份 JSON、导入恢复、导出 CSV 和二次确认清空。
+- 完整 JSON 备份可以在浏览器版与桌面版之间手动迁移训练、专注、计划、待办、笔记、设置和 IndexedDB 知识库。DeepSeek Key、可重建向量索引和待审批 Agent 线程不会进入备份；旧版仅含应用数据的 JSON 仍可导入且不会清空现有知识库。
 - 数据格式当前为 v11；应用会自动迁移旧版状态。v8 的“稍后任务”会并入行动便签收集区，v10 新增独立笔记集合，v11 新增最近 50 份已批准 Agent 计划及本地幂等 action ledger。
 - 可在设置页调整每日投入目标、默认专注时长、提示音、界面动画、训练提示和专注完成通知，并管理个人知识来源、查看文本处理状态与分块结果。
 - 桌面程序与浏览器网站使用不同的本地数据空间，网页中的历史记录不会自动迁移到桌面程序。
+- Windows 桌面服务数据默认位于当前用户的 `%LOCALAPPDATA%\Xirang`，包含 DPAPI 密文、SQLite Checkpoint、向量索引与诊断日志；只读模型位于安装资源目录。跨 Windows 用户恢复时必须重新授权 API Key。
 - 在设置页确认清空设备数据时会同时清除知识库；清除浏览器站点数据也会清除训练记录与本地知识来源。
 - BM25 请求无状态；只有用户明确点击“构建本地索引”后，已授权文本块和 512 维向量才会保存到本机 Qdrant。语料变化会触发增量更新，用户可随时在实验台清除索引。
 - BGE Embedding、Qdrant 和多语言 Cross-Encoder 均在本机 CPU 运行；模型缺失时界面会说明并降级。只有用户明确点击“生成引用回答”后，本次问题与界面已预览的最小证据才会发送给 DeepSeek；本地构建、检索和预览不会出站。

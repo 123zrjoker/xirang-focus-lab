@@ -1,4 +1,5 @@
 import type { KnowledgeChunk } from './knowledgeBase'
+import { apiUrl, desktopBridge } from './apiUrl'
 
 export interface RetrievalHealth {
   status: 'ok'
@@ -155,14 +156,6 @@ export interface RagAnswerResponse {
   warnings: string[]
 }
 
-const configuredApiBase = import.meta.env.VITE_RETRIEVAL_API_URL?.replace(/\/$/, '')
-
-function apiUrl(path: string) {
-  if (configuredApiBase) return `${configuredApiBase}${path}`
-  if (typeof window !== 'undefined' && window.location.protocol === 'file:') return `http://127.0.0.1:8000${path}`
-  return path
-}
-
 async function request(path: string, init?: RequestInit, timeoutMs = 15_000) {
   const controller = new AbortController()
   const timeout = globalThis.setTimeout(() => controller.abort(), timeoutMs)
@@ -170,7 +163,9 @@ async function request(path: string, init?: RequestInit, timeoutMs = 15_000) {
     return await fetch(apiUrl(path), { ...init, signal: controller.signal })
   } catch (error) {
     if (error instanceof DOMException && error.name === 'AbortError') throw new Error('本地检索服务响应超时。')
-    throw new Error('无法连接本地检索服务，请先运行 npm.cmd run dev:api。')
+    throw new Error(desktopBridge()
+      ? '无法连接桌面本机服务，请在设置页查看运行状态并尝试重启。'
+      : '无法连接本地检索服务，请先运行 npm.cmd run dev:api。')
   } finally {
     globalThis.clearTimeout(timeout)
   }

@@ -46,6 +46,7 @@ from .agent.planner import DeepSeekActionPlanner
 from .agent.prompts import build_prompt_registry
 from .agent.tools import build_read_only_registry
 from .agent.tracing import TraceRecorder
+from .runtime_paths import runtime_path_summary
 
 
 def to_camel(value: str) -> str:
@@ -277,6 +278,7 @@ agent_prompt_registry = build_prompt_registry()
 
 
 def close_agent_runtime() -> None:
+    semantic_index.close()
     agent_trace_recorder.close()
     agent_checkpointer.conn.close()
 
@@ -309,6 +311,7 @@ def health() -> dict:
         },
         "generation": generation_provider.status(),
         "index": index,
+        "runtime": runtime_path_summary(),
     }
 
 

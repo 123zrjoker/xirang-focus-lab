@@ -8,6 +8,8 @@ import shutil
 from pathlib import Path
 from typing import Optional, Protocol
 
+from .runtime_paths import default_credential_path
+
 
 _CREDENTIAL_VERSION = 1
 _PROVIDER = "deepseek"
@@ -124,16 +126,6 @@ class WindowsDpapiProtector:
             return ctypes.string_at(unprotected.pbData, unprotected.cbData)
         finally:
             self._kernel32.LocalFree(unprotected.pbData)
-
-
-def default_credential_path() -> Path:
-    override = os.environ.get("XIRANG_CREDENTIAL_DIR", "").strip()
-    if override:
-        return Path(override).expanduser().resolve() / "deepseek.json"
-    local_app_data = os.environ.get("LOCALAPPDATA", "").strip()
-    if local_app_data:
-        return Path(local_app_data) / "Xirang" / "credentials" / "deepseek.json"
-    return Path.home() / ".xirang" / "credentials" / "deepseek.json"
 
 
 class DeepSeekCredentialStore:

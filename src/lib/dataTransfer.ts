@@ -1,11 +1,14 @@
 import { CURRENT_SCHEMA_VERSION, migrateState } from './storage'
 import type { AppState } from '../types'
+import type { KnowledgeBaseBackup } from './knowledgeBase'
 
 interface XirangBackup {
   product: 'xirang'
+  backupVersion: 2
   schemaVersion: number
   exportedAt: string
   state: AppState
+  knowledgeBase?: KnowledgeBaseBackup
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -22,17 +25,19 @@ export function exportDateStamp(date = new Date()) {
   return parts.join('-')
 }
 
-export function createBackupText(state: AppState) {
+export function createBackupText(state: AppState, knowledgeBase?: KnowledgeBaseBackup) {
   const backup: XirangBackup = {
     product: 'xirang',
+    backupVersion: 2,
     schemaVersion: CURRENT_SCHEMA_VERSION,
     exportedAt: new Date().toISOString(),
     state: { ...state, schemaVersion: CURRENT_SCHEMA_VERSION },
+    ...(knowledgeBase ? { knowledgeBase } : {}),
   }
   return JSON.stringify(backup, null, 2)
 }
 
-export function parseBackupText(text: string) {
+export function parseBackupData(text: string): { state: AppState; knowledgeBase?: KnowledgeBaseBackup } {
   let parsed: unknown
   try {
     parsed = JSON.parse(text)
@@ -49,7 +54,14 @@ export function parseBackupText(text: string) {
   if (!('profile' in source) && !('sessions' in source) && !('focusSessions' in source)) {
     throw new Error('没有在文件中找到息壤数据。')
   }
-  return migrateState(source)
+  return {
+    state: migrateState(source),
+    ...(isRecord(parsed.knowledgeBase) ? { knowledgeBase: parsed.knowledgeBase as unknown as KnowledgeBaseBackup } : {}),
+  }
+}
+
+export function parseBackupText(text: string) {
+  return parseBackupData(text).state
 }
 
 export function createCsvText(state: AppState) {

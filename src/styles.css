@@ -2162,6 +2162,79 @@ html.motion-off *, html.motion-off *::before, html.motion-off *::after {
   color: var(--text-muted);
 }
 
+.desktop-service-card {
+  display: grid;
+  gap: 16px;
+}
+
+.desktop-service-card .settings-card-heading {
+  grid-template-columns: auto 1fr auto;
+}
+
+.desktop-service-state {
+  align-self: center;
+  padding: 6px 10px;
+  border-radius: 999px;
+  background: rgba(128, 108, 55, 0.1);
+  color: #75622d;
+  font-size: 12px;
+}
+
+.desktop-service-state.ready {
+  background: rgba(65, 112, 82, 0.12);
+  color: #315f41;
+}
+
+.desktop-service-state.failed {
+  background: rgba(143, 61, 53, 0.1);
+  color: #8f3d35;
+}
+
+.desktop-service-description,
+.desktop-service-error,
+.desktop-service-actions small {
+  margin: 0;
+  color: var(--text-muted);
+  line-height: 1.65;
+}
+
+.desktop-service-details {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 9px;
+}
+
+.desktop-service-details span {
+  display: grid;
+  gap: 4px;
+  padding: 11px 12px;
+  border-radius: 11px;
+  background: rgba(236, 243, 233, 0.72);
+}
+
+.desktop-service-details small {
+  color: var(--text-muted);
+}
+
+.desktop-service-details strong {
+  color: #315f41;
+  font-size: 13px;
+}
+
+.desktop-service-error {
+  padding: 10px 12px;
+  border-radius: 10px;
+  background: rgba(143, 61, 53, 0.08);
+  color: #8f3d35;
+  word-break: break-word;
+}
+
+.desktop-service-actions {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
 .agent-plan-result-heading h3 {
   margin: 3px 0 6px;
   font-size: 24px;
@@ -2568,6 +2641,24 @@ html.motion-off *, html.motion-off *::before, html.motion-off *::after {
 
   .agent-consent-grid {
     grid-template-columns: 1fr;
+  }
+
+  .desktop-service-card .settings-card-heading {
+    grid-template-columns: auto 1fr;
+  }
+
+  .desktop-service-state {
+    grid-column: 1 / -1;
+    justify-self: start;
+  }
+
+  .desktop-service-details {
+    grid-template-columns: 1fr;
+  }
+
+  .desktop-service-actions {
+    align-items: flex-start;
+    flex-direction: column;
   }
 
   .agent-preview-metrics {

@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import hashlib
 import math
-import os
 import time
 from dataclasses import replace
 from pathlib import Path
@@ -12,10 +11,9 @@ import numpy as np
 
 from .retrieval import RankedChunk, RetrievalChunk, ScoreBreakdown, SearchOutput, normalize_text, search_chunks, tokenize
 from .semantic import LocalVectorIndex, ModelUnavailableError, chunk_embedding_text
+from .runtime_paths import default_reranker_model_path
 
 
-PROJECT_ROOT = Path(__file__).resolve().parent.parent
-DEFAULT_RERANKER_PATH = PROJECT_ROOT / ".model-cache" / "mmarco-mMiniLMv2-L12-H384-v1"
 RRF_ENGINE_NAME = "bm25+bge-weighted-rrf-v1"
 RERANK_ENGINE_NAME = "bm25+bge-weighted-rrf+mmarco-cross-encoder-v1"
 RRF_K = 60
@@ -41,8 +39,7 @@ class MMarcoCrossEncoderReranker:
     name = "cross-encoder/mmarco-mMiniLMv2-L12-H384-v1-int8"
 
     def __init__(self, model_path: Optional[Path] = None) -> None:
-        configured = os.environ.get("XIRANG_RERANKER_MODEL_PATH")
-        self.model_path = Path(configured) if configured else (model_path or DEFAULT_RERANKER_PATH)
+        self.model_path = model_path or default_reranker_model_path()
         self.onnx_path = self.model_path / "onnx" / "model_quint8_avx2.onnx"
         self._tokenizer = None
         self._session = None

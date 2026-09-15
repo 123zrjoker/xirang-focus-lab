@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { createBackupText, createCsvText, parseBackupText } from '../src/lib/dataTransfer'
+import { createBackupText, createCsvText, parseBackupData, parseBackupText } from '../src/lib/dataTransfer'
 import { createDefaultState } from '../src/lib/storage'
 
 describe('v10 data transfer', () => {
@@ -46,5 +46,20 @@ describe('v10 data transfer', () => {
     expect(csv).toContain('笔记正文')
     const rows = csv.replace(/^\uFEFF/, '').split('\r\n').map((row) => row.split(','))
     rows.slice(1).forEach((row) => expect(row).toHaveLength(rows[0].length))
+  })
+
+  it('keeps a versioned knowledge-base snapshot in the full backup envelope', () => {
+    const state = createDefaultState()
+    const knowledgeBase = {
+      schemaVersion: 2,
+      sources: [],
+      permissions: [],
+      chunks: [],
+      retrievals: [],
+      metadata: [],
+    }
+    const restored = parseBackupData(createBackupText(state, knowledgeBase))
+    expect(restored.state.schemaVersion).toBe(state.schemaVersion)
+    expect(restored.knowledgeBase).toEqual(knowledgeBase)
   })
 })

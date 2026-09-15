@@ -80,6 +80,15 @@ export interface KnowledgeStorageSummary {
   chunkBytes: number
 }
 
+export interface KnowledgeBaseBackup {
+  schemaVersion: number
+  sources: KnowledgeSource[]
+  permissions: KnowledgePermission[]
+  chunks: KnowledgeChunk[]
+  retrievals: KnowledgeRetrievalRecord[]
+  metadata: Record<string, unknown>[]
+}
+
 export type NoteKnowledgeStatus = 'not-authorized' | 'ready' | 'outdated'
 
 export const KNOWLEDGE_DB_NAME = 'xirang-knowledge-base'
@@ -542,6 +551,137 @@ export async function getKnowledgeStorageSummary(): Promise<KnowledgeStorageSumm
       sourceBytes: knowledgeSourceBytes(sources),
       chunkBytes: chunks.reduce((sum, chunk) => sum + textBytes(chunk.content), 0),
     }
+  } finally {
+    database.close()
+  }
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value)
+}
+
+function validateBackupCollections(value: unknown): KnowledgeBaseBackup {
+  if (!isRecord(value)) throw new Error('知识库备份内容不完整。')
+  const schemaVersion = Number(value.schemaVersion)
+  if (!Number.isInteger(schemaVersion) || schemaVersion < 1 || schemaVersion > KNOWLEDGE_DB_VERSION) {
+    throw new Error('知识库备份版本不受当前应用支持。')
+  }
+  const collectionNames = ['sources', 'permissions', 'chunks', 'retrievals', 'metadata'] as const
+  for (const name of collectionNames) {
+    if (!Array.isArray(value[name])) throw new Error(`知识库备份缺少 ${name} 集合。`)
+  }
+  const rawSources = value.sources as unknown[]
+  const rawPermissions = value.permissions as unknown[]
+  const rawChunks = value.chunks as unknown[]
+  const rawRetrievals = value.retrievals as unknown[]
+  const rawMetadata = value.metadata as unknown[]
+  const sources = rawSources.filter(isRecord) as unknown as KnowledgeSource[]
+  const permissions = rawPermissions.filter(isRecord) as unknown as KnowledgePermission[]
+  const chunks = rawChunks.filter(isRecord) as unknown as KnowledgeChunk[]
+  const retrievals = rawRetrievals.filter(isRecord) as unknown as KnowledgeRetrievalRecord[]
+  const metadata = rawMetadata.filter(isRecord)
+  if (sources.length !== rawSources.length || sources.length > MAX_KNOWLEDGE_SOURCES) {
+    throw new Error('知识来源数量或格式无效。')
+  }
+  if (permissions.length !== rawPermissions.length || permissions.length > MAX_KNOWLEDGE_SOURCES) {
+    throw new Error('知识库授权记录数量或格式无效。')
+  }
+  if (chunks.length !== rawChunks.length || chunks.length > MAX_KNOWLEDGE_SOURCES * 10_000) {
+    throw new Error('知识文本块数量或格式无效。')
+  }
+  if (retrievals.length !== rawRetrievals.length || retrievals.length > MAX_RETRIEVAL_RECORDS) {
+    throw new Error('知识检索记录数量或格式无效。')
+  }
+  if (metadata.length !== rawMetadata.length || metadata.length > 20) {
+    throw new Error('知识库元数据数量或格式无效。')
+  }
+  const sourceIds = new Set<string>()
+  for (const source of sources) {
+    if (typeof source.id !== 'string' || !source.id || sourceIds.has(source.id)
+      || typeof source.title !== 'string' || typeof source.content !== 'string') {
+      throw new Error('知识来源记录格式无效或 ID 重复。')
+    }
+    sourceIds.add(source.id)
+  }
+  if (permissions.some((permission) => typeof permission.sourceId !== 'string' || !sourceIds.has(permission.sourceId))) {
+    throw new Error('知识库授权记录引用了不存在的来源。')
+  }
+  if (chunks.some((chunk) => typeof chunk.id !== 'string' || !chunk.id
+    || typeof chunk.sourceId !== 'string' || !sourceIds.has(chunk.sourceId) || typeof chunk.content !== 'string')) {
+    throw new Error('知识文本块引用了不存在的来源。')
+  }
+  return { schemaVersion, sources, permissions, chunks, retrievals, metadata }
+}
+
+export async function exportKnowledgeBase(): Promise<KnowledgeBaseBackup> {
+  const database = await openKnowledgeDatabase()
+  try {
+    const stores = [
+      KNOWLEDGE_SOURCE_STORE,
+      KNOWLEDGE_PERMISSION_STORE,
+      KNOWLEDGE_CHUNK_STORE,
+      KNOWLEDGE_RETRIEVAL_STORE,
+      KNOWLEDGE_METADATA_STORE,
+    ]
+    const transaction = database.transaction(stores, 'readonly')
+    const completed = transactionComplete(transaction)
+    const [rawSources, permissions, chunks, retrievals, metadata] = await Promise.all([
+      requestResult(transaction.objectStore(KNOWLEDGE_SOURCE_STORE).getAll()) as Promise<KnowledgeSource[]>,
+      requestResult(transaction.objectStore(KNOWLEDGE_PERMISSION_STORE).getAll()) as Promise<KnowledgePermission[]>,
+      requestResult(transaction.objectStore(KNOWLEDGE_CHUNK_STORE).getAll()) as Promise<KnowledgeChunk[]>,
+      requestResult(transaction.objectStore(KNOWLEDGE_RETRIEVAL_STORE).getAll()) as Promise<KnowledgeRetrievalRecord[]>,
+      requestResult(transaction.objectStore(KNOWLEDGE_METADATA_STORE).getAll()) as Promise<Record<string, unknown>[]>,
+    ])
+    await completed
+    return {
+      schemaVersion: KNOWLEDGE_DB_VERSION,
+      sources: await Promise.all(rawSources.map(sourceWithIntegrity)),
+      permissions,
+      chunks,
+      retrievals,
+      metadata,
+    }
+  } finally {
+    database.close()
+  }
+}
+
+export async function restoreKnowledgeBase(value: unknown) {
+  const backup = validateBackupCollections(value)
+  const sources = await Promise.all(backup.sources.map(sourceWithIntegrity))
+  const sourceIds = new Set(sources.map((source) => source.id))
+  const permissionsBySource = new Map(backup.permissions.map((permission) => [permission.sourceId, permission]))
+  const permissions = sources.map((source) => permissionsBySource.get(source.id) ?? permissionForSource(source))
+  const database = await openKnowledgeDatabase()
+  try {
+    const stores = [
+      KNOWLEDGE_SOURCE_STORE,
+      KNOWLEDGE_PERMISSION_STORE,
+      KNOWLEDGE_CHUNK_STORE,
+      KNOWLEDGE_RETRIEVAL_STORE,
+      KNOWLEDGE_METADATA_STORE,
+    ]
+    const transaction = database.transaction(stores, 'readwrite')
+    const completed = transactionComplete(transaction)
+    stores.forEach((storeName) => transaction.objectStore(storeName).clear())
+    sources.forEach((source) => transaction.objectStore(KNOWLEDGE_SOURCE_STORE).put(source))
+    permissions.forEach((permission) => transaction.objectStore(KNOWLEDGE_PERMISSION_STORE).put(permission))
+    backup.chunks
+      .filter((chunk) => sourceIds.has(chunk.sourceId))
+      .forEach((chunk) => transaction.objectStore(KNOWLEDGE_CHUNK_STORE).put(chunk))
+    backup.retrievals
+      .slice(-MAX_RETRIEVAL_RECORDS)
+      .forEach((record) => transaction.objectStore(KNOWLEDGE_RETRIEVAL_STORE).put(record))
+    backup.metadata.forEach((item) => {
+      if (typeof item.key === 'string' && item.key) transaction.objectStore(KNOWLEDGE_METADATA_STORE).put(item)
+    })
+    transaction.objectStore(KNOWLEDGE_METADATA_STORE).put({
+      key: 'schema',
+      databaseVersion: KNOWLEDGE_DB_VERSION,
+      restoredFrom: backup.schemaVersion,
+      updatedAt: new Date().toISOString(),
+    })
+    await completed
   } finally {
     database.close()
   }

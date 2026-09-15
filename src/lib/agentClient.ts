@@ -1,4 +1,5 @@
 import type { ActionContextSnapshot } from './agentContext'
+import { apiUrl } from './apiUrl'
 
 export interface AgentFoundationStatus {
   graphVersion: string
@@ -125,7 +126,7 @@ async function requestJson<T>(url: string, options?: RequestInit, timeoutMs = 13
   const controller = new AbortController()
   const timeout = globalThis.setTimeout(() => controller.abort(), timeoutMs)
   try {
-    const response = await fetch(url, { ...options, signal: controller.signal })
+    const response = await fetch(apiUrl(url), { ...options, signal: controller.signal })
     if (!response.ok) throw new Error(await responseError(response))
     return await response.json() as T
   } catch (error) {
@@ -193,7 +194,7 @@ async function streamAgentRequest(
   const abortFromExternal = () => controller.abort('cancelled')
   externalSignal?.addEventListener('abort', abortFromExternal, { once: true })
   try {
-    const response = await fetch(url, {
+    const response = await fetch(apiUrl(url), {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', Accept: 'text/event-stream' },
       body: JSON.stringify(body),

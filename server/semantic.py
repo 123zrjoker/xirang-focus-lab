@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import hashlib
 import json
-import os
 import time
 import uuid
 from dataclasses import dataclass
@@ -13,12 +12,13 @@ from typing import Optional, Protocol, Sequence
 import numpy as np
 
 from .retrieval import RankedChunk, RetrievalChunk, ScoreBreakdown, SearchOutput, normalize_text, tokenize
+from .runtime_paths import (
+    default_embedding_model_path,
+    default_vector_index_path,
+    default_vector_meta_path,
+)
 
 
-PROJECT_ROOT = Path(__file__).resolve().parent.parent
-DEFAULT_MODEL_PATH = PROJECT_ROOT / ".model-cache" / "bge-small-zh-v1.5"
-DEFAULT_INDEX_PATH = PROJECT_ROOT / "server" / "data" / "qdrant"
-DEFAULT_META_PATH = PROJECT_ROOT / "server" / "data" / "index-meta.json"
 COLLECTION_NAME = "xirang_knowledge_chunks"
 VECTOR_ENGINE_NAME = "bge-small-zh-v1.5+qdrant-local"
 BGE_QUERY_INSTRUCTION = "为这个句子生成表示以用于检索相关文章："
@@ -49,8 +49,7 @@ class BgeEmbeddingProvider:
     dimensions = 512
 
     def __init__(self, model_path: Optional[Path] = None) -> None:
-        configured = os.environ.get("XIRANG_EMBEDDING_MODEL_PATH")
-        self.model_path = Path(configured) if configured else (model_path or DEFAULT_MODEL_PATH)
+        self.model_path = model_path or default_embedding_model_path()
         self._model = None
         self._checksum: Optional[str] = None
         self._query_cache: dict[str, np.ndarray] = {}
@@ -189,8 +188,8 @@ class LocalVectorIndex:
         memory: bool = False,
     ) -> None:
         self.provider = provider or BgeEmbeddingProvider()
-        self.path = path or DEFAULT_INDEX_PATH
-        self.meta_path = None if memory else (meta_path or DEFAULT_META_PATH)
+        self.path = path or default_vector_index_path()
+        self.meta_path = None if memory else (meta_path or default_vector_meta_path())
         self.memory = memory
         self._client = None
         self._memory_meta: dict = {}
@@ -438,6 +437,12 @@ class LocalVectorIndex:
         if client.collection_exists(COLLECTION_NAME):
             client.delete_collection(COLLECTION_NAME)
         self._write_meta({})
+
+    def close(self) -> None:
+        client = self._client
+        self._client = None
+        if client is not None and hasattr(client, "close"):
+            client.close()
 
 
 semantic_index = LocalVectorIndex()

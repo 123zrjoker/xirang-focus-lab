@@ -1,14 +1,21 @@
 const path = require('node:path')
-const { app, BrowserWindow, Menu, shell } = require('electron')
+const { app, BrowserWindow, Menu, ipcMain, shell } = require('electron')
+const { ApiServiceSupervisor } = require('./api-service.cjs')
+const { resolveRuntimePaths } = require('./runtime-paths.cjs')
 
 const APP_ID = 'com.focuslab.xirang'
 const gotSingleInstanceLock = app.requestSingleInstanceLock()
 
-if (!gotSingleInstanceLock) {
-  app.quit()
-}
+if (!gotSingleInstanceLock) app.quit()
 
 let mainWindow = null
+let apiService = null
+let quitAfterServiceStops = false
+
+function sendServiceStatus(status) {
+  if (!mainWindow || mainWindow.isDestroyed()) return
+  mainWindow.webContents.send('xirang:api-status-changed', status)
+}
 
 function createMainWindow() {
   const window = new BrowserWindow({
@@ -21,6 +28,8 @@ function createMainWindow() {
     backgroundColor: '#f4f6f1',
     autoHideMenuBar: true,
     webPreferences: {
+      preload: path.join(__dirname, 'preload.cjs'),
+      additionalArguments: apiService?.baseUrl ? [`--xirang-api-base=${apiService.baseUrl}`] : [],
       nodeIntegration: false,
       contextIsolation: true,
       sandbox: true,
@@ -35,6 +44,7 @@ function createMainWindow() {
   window.once('ready-to-show', () => {
     window.show()
     window.focus()
+    if (apiService) sendServiceStatus(apiService.snapshot())
   })
 
   window.webContents.setWindowOpenHandler(({ url }) => {
@@ -76,12 +86,50 @@ app.on('second-instance', () => {
   mainWindow.focus()
 })
 
-app.whenReady().then(() => {
+app.whenReady().then(async () => {
+  const appPath = app.getAppPath()
+  const paths = resolveRuntimePaths({
+    app,
+    appPath,
+    resourcesPath: process.resourcesPath,
+    isPackaged: app.isPackaged,
+  })
+  apiService = new ApiServiceSupervisor({ paths, appPath, isPackaged: app.isPackaged })
+  apiService.on('status', sendServiceStatus)
+  await apiService.prepare()
+
+  ipcMain.handle('xirang:api-status', () => apiService.snapshot())
+  ipcMain.handle('xirang:api-restart', async () => {
+    try {
+      return await apiService.restart()
+    } catch {
+      return apiService.snapshot()
+    }
+  })
+
   createMainWindow()
+  void apiService.start().then(() => {
+    const smokeExitMilliseconds = Number(process.env.XIRANG_DESKTOP_SMOKE_AUTO_EXIT_MS || 0)
+    if (smokeExitMilliseconds >= 500 && smokeExitMilliseconds <= 30_000) {
+      setTimeout(() => app.quit(), smokeExitMilliseconds)
+    }
+  }).catch(() => {
+    // The renderer receives the failed state and exposes a retry action.
+  })
 
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) createMainWindow()
   })
+}).catch((error) => {
+  console.error('Unable to initialise Xirang desktop runtime:', error)
+  app.quit()
+})
+
+app.on('before-quit', (event) => {
+  if (quitAfterServiceStops || !apiService) return
+  event.preventDefault()
+  quitAfterServiceStops = true
+  void apiService.stop().finally(() => app.quit())
 })
 
 app.on('window-all-closed', () => {

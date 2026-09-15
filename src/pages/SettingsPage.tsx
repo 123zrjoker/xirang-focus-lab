@@ -1,18 +1,20 @@
 import { useRef, useState, type ChangeEvent, type ReactNode } from 'react'
 import { KnowledgeBaseManager } from '../components/KnowledgeBaseManager'
 import { AIProviderSettings } from '../components/AIProviderSettings'
+import { DesktopServicePanel } from '../components/DesktopServicePanel'
 import {
   createBackupText,
   createCsvText,
   downloadTextFile,
   exportDateStamp,
-  parseBackupText,
+  parseBackupData,
 } from '../lib/dataTransfer'
 import {
   notificationCapability,
   requestDesktopNotificationPermission,
 } from '../lib/feedback'
 import { CURRENT_SCHEMA_VERSION } from '../lib/storage'
+import { exportKnowledgeBase, restoreKnowledgeBase } from '../lib/knowledgeBase'
 import type { AppSettings, AppState, UserProfile } from '../types'
 
 interface SettingsPageProps {
@@ -82,13 +84,18 @@ export function SettingsPage({
     .sort((a, b) => Date.parse(b) - Date.parse(a))[0]
   const dataSize = new Blob([JSON.stringify(state)]).size
 
-  function exportBackup() {
-    downloadTextFile(
-      createBackupText(state),
-      `息壤-应用数据备份-${exportDateStamp()}.json`,
-      'application/json;charset=utf-8',
-    )
-    setMessage({ tone: 'success', text: '应用数据已导出；知识库文档当前不包含在这份 JSON 中。' })
+  async function exportBackup() {
+    try {
+      const knowledgeBase = await exportKnowledgeBase()
+      downloadTextFile(
+        createBackupText(state, knowledgeBase),
+        `息壤-完整数据备份-${exportDateStamp()}.json`,
+        'application/json;charset=utf-8',
+      )
+      setMessage({ tone: 'success', text: '应用记录与知识库已导出；DeepSeek Key 和临时 Agent 线程不会进入备份。' })
+    } catch (error) {
+      setMessage({ tone: 'error', text: error instanceof Error ? error.message : '完整备份导出失败。' })
+    }
   }
 
   function exportCsv() {
@@ -105,17 +112,22 @@ export function SettingsPage({
     const file = input.files?.[0]
     if (!file) return
     try {
-      if (file.size > 10 * 1024 * 1024) throw new Error('备份文件超过 10 MB，无法导入。')
-      const nextState = parseBackupText(await file.text())
+      if (file.size > 100 * 1024 * 1024) throw new Error('备份文件超过 100 MB，无法导入。')
+      const backup = parseBackupData(await file.text())
+      const nextState = backup.state
       const confirmed = window.confirm('导入会替换此设备上的当前数据。是否继续？')
       if (!confirmed) return
       if (nextState.settings.desktopNotificationsEnabled && notificationCapability() !== 'granted') {
         nextState.settings.desktopNotificationsEnabled = false
       }
+      if (backup.knowledgeBase) await restoreKnowledgeBase(backup.knowledgeBase)
       onReplaceState(nextState)
+      setKnowledgeRefreshKey((current) => current + 1)
       setNotificationPermission(notificationCapability())
       setConfirmClear(false)
-      setMessage({ tone: 'success', text: '数据已导入。新的训练记录和设置现在已经生效。' })
+      setMessage({ tone: 'success', text: backup.knowledgeBase
+        ? '应用记录与知识库已恢复。加密 API Key 需要沿用本机凭据或重新授权。'
+        : '旧版应用数据已导入；当前知识库保持不变。' })
     } catch (error) {
       setMessage({ tone: 'error', text: error instanceof Error ? error.message : '导入失败，请检查备份文件。' })
     } finally {
@@ -255,6 +267,8 @@ export function SettingsPage({
             </div>
           </section>
 
+          <DesktopServicePanel />
+
           <AIProviderSettings onChanged={() => setKnowledgeRefreshKey((current) => current + 1)} />
 
           <KnowledgeBaseManager notes={state.personalNotes} refreshKey={knowledgeRefreshKey} />
@@ -280,12 +294,12 @@ export function SettingsPage({
                 : '还没有保存任何记录。'}
             </p>
             <div className="data-actions">
-              <button className="button primary full" type="button" onClick={exportBackup}>导出应用数据 JSON</button>
+              <button className="button primary full" type="button" onClick={() => void exportBackup()}>导出完整备份 JSON</button>
               <button className="button secondary full" type="button" onClick={() => fileInput.current?.click()}>从备份导入</button>
               <button className="data-link" type="button" onClick={exportCsv}>导出全部记录 CSV →</button>
               <input ref={fileInput} type="file" accept="application/json,.json" onChange={importBackup} hidden />
             </div>
-            <p className="data-note">JSON 会保留训练、专注、计划、待办、笔记和全部设置，适合恢复与迁移；知识库文档使用独立本地存储，当前不包含在 JSON 中。</p>
+            <p className="data-note">完整备份包含训练、专注、计划、待办、笔记、设置和知识库；不包含 DeepSeek Key、向量索引或待审批 Agent 线程。旧版应用数据备份仍可导入。</p>
           </section>
 
           <section className="danger-card card-surface">

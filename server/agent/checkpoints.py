@@ -10,6 +10,7 @@ from langgraph.checkpoint.serde.jsonplus import JsonPlusSerializer
 from langgraph.checkpoint.sqlite import SqliteSaver
 
 from .contracts import AGENT_COMPATIBLE_GRAPH_VERSIONS, AGENT_SCHEMA_VERSION
+from ..runtime_paths import default_checkpoint_path
 
 
 class IncompatibleCheckpointError(ValueError):
@@ -50,16 +51,6 @@ def _safe_serializer() -> JsonPlusSerializer:
 
 def build_in_memory_checkpointer() -> InMemorySaver:
     return InMemorySaver(serde=_safe_serializer())
-
-
-def default_checkpoint_path() -> Path:
-    override = os.environ.get("XIRANG_AGENT_CHECKPOINT_PATH", "").strip()
-    if override:
-        return Path(override).expanduser().resolve()
-    local_app_data = os.environ.get("LOCALAPPDATA", "").strip()
-    if local_app_data:
-        return Path(local_app_data) / "Xirang" / "agent" / "checkpoints.sqlite3"
-    return Path.home() / ".xirang" / "agent" / "checkpoints.sqlite3"
 
 
 def resolve_checkpoint_path() -> Path:
