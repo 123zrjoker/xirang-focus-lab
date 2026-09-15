@@ -62,6 +62,7 @@ def test_no_match_returns_an_explicit_no_answer_state() -> None:
 def test_api_is_stateless_and_returns_camel_case_contract() -> None:
     client = TestClient(app)
     health = client.get("/api/health")
+    diagnostics = client.get("/api/diagnostics")
     response = client.post("/api/retrieval/search", json={
         "query": "如何开始抗拒的任务",
         "topK": 2,
@@ -80,6 +81,9 @@ def test_api_is_stateless_and_returns_camel_case_contract() -> None:
 
     assert health.status_code == 200
     assert health.json()["storesData"] is False
+    assert diagnostics.status_code == 200
+    assert diagnostics.json()["agent"]["operationMode"] == "serialized"
+    assert diagnostics.json()["runtime"]["pythonVersion"]
     assert response.status_code == 200
     payload = response.json()
     assert payload["engine"] == "bm25-zh-v1"

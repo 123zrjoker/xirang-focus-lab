@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+from concurrent.futures import ThreadPoolExecutor
 from copy import deepcopy
+from threading import Event, Lock
 
 import pytest
 from fastapi.testclient import TestClient
@@ -361,3 +363,62 @@ def test_agent_api_uses_provider_only_after_context_manifest_and_tools(monkeypat
     assert "event: progress" in ack_stream.text
     assert "event: result" in ack_stream.text
     assert '"status": "completed"' in ack_stream.text
+
+
+def test_agent_api_serializes_shared_checkpoint_operations(monkeypatch) -> None:
+    class AvailableProvider:
+        name = "concurrency-test-provider"
+        model = "concurrency-test-model"
+
+        def status(self):
+            return {"provider": self.name, "model": self.model, "available": True, "configured": True}
+
+        def generate_structured(self, *_args, **_kwargs):
+            raise AssertionError("The slow harness should replace the planner in this test.")
+
+    result = AgentHarness().run(snapshot_payload(), "serialized-result")
+    first_entered = Event()
+    second_entered = Event()
+    release_first = Event()
+    state_lock = Lock()
+    active = 0
+    maximum_active = 0
+    call_count = 0
+
+    class SlowHarness:
+        def run(self, _context, _thread_id):
+            nonlocal active, maximum_active, call_count
+            with state_lock:
+                call_count += 1
+                current_call = call_count
+                active += 1
+                maximum_active = max(maximum_active, active)
+            if current_call == 1:
+                first_entered.set()
+                assert release_first.wait(2)
+            else:
+                second_entered.set()
+            with state_lock:
+                active -= 1
+            return result
+
+    monkeypatch.setattr(main_module, "generation_provider", AvailableProvider())
+    monkeypatch.setattr(main_module, "build_active_agent_harness", lambda: SlowHarness())
+
+    def post(thread_id: str):
+        return TestClient(main_module.app).post("/api/agent/plan", json={
+            "threadId": thread_id,
+            "context": snapshot_payload(),
+        })
+
+    with ThreadPoolExecutor(max_workers=2) as executor:
+        first = executor.submit(post, "serialized-first")
+        assert first_entered.wait(1)
+        second = executor.submit(post, "serialized-second")
+        assert not second_entered.wait(0.1)
+        release_first.set()
+        assert first.result(timeout=2).status_code == 200
+        assert second.result(timeout=2).status_code == 200
+
+    assert second_entered.is_set()
+    assert maximum_active == 1

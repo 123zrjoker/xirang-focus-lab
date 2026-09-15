@@ -7,6 +7,7 @@ from server.runtime_paths import (
     default_credential_path,
     default_embedding_model_path,
     default_vector_index_path,
+    runtime_diagnostics,
 )
 
 
@@ -32,3 +33,18 @@ def test_specific_path_override_wins(monkeypatch, tmp_path: Path) -> None:
     monkeypatch.setenv("XIRANG_AGENT_CHECKPOINT_PATH", str(checkpoint))
 
     assert default_checkpoint_path() == checkpoint
+
+
+def test_runtime_diagnostics_never_include_credential_contents(monkeypatch, tmp_path: Path) -> None:
+    data_root = tmp_path / "runtime"
+    credential_dir = data_root / "credentials"
+    credential_dir.mkdir(parents=True)
+    secret = "diagnostic-secret-must-not-appear"
+    (credential_dir / "deepseek.json").write_text(secret, encoding="utf-8")
+    monkeypatch.setenv("XIRANG_DATA_DIR", str(data_root))
+
+    diagnostics = runtime_diagnostics()
+
+    assert diagnostics["desktopManaged"] is True
+    assert diagnostics["paths"]["credentialDirectory"]["path"] == str(credential_dir.resolve())
+    assert secret not in str(diagnostics)

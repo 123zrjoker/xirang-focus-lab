@@ -40,6 +40,14 @@ function errorMessage(error) {
   return String(error || '未知错误')
 }
 
+function writeStructuredLog(stream, event, details = {}) {
+  stream.write(`${JSON.stringify({
+    timestamp: new Date().toISOString(),
+    event,
+    ...details,
+  })}\n`)
+}
+
 class ApiServiceSupervisor extends EventEmitter {
   constructor({ paths, appPath, isPackaged, env = process.env, spawnProcess = spawn, fetchImpl = globalThis.fetch }) {
     super()
@@ -86,9 +94,16 @@ class ApiServiceSupervisor extends EventEmitter {
   }
 
   async start() {
-    if (this.operation) return this.operation
-    this.operation = this.startInternal().finally(() => { this.operation = null })
-    return this.operation
+    return this.enqueue(() => this.startInternal())
+  }
+
+  enqueue(operation) {
+    const previous = this.operation
+    const current = (previous ? previous.catch(() => undefined) : Promise.resolve()).then(operation)
+    this.operation = current
+    return current.finally(() => {
+      if (this.operation === current) this.operation = null
+    })
   }
 
   async startInternal() {
@@ -108,7 +123,10 @@ class ApiServiceSupervisor extends EventEmitter {
       const logPath = path.join(this.paths.logRoot, 'desktop-api.log')
       const logStream = fs.createWriteStream(logPath, { flags: 'a' })
       this.logStream = logStream
-      logStream.write(`\n[${new Date().toISOString()}] starting ${launch.kind} on ${this.baseUrl}\n`)
+      writeStructuredLog(logStream, 'service_start', {
+        launchKind: launch.kind,
+        baseUrl: this.baseUrl,
+      })
       const child = this.spawnProcess(launch.command, launch.args, {
         cwd: this.isPackaged ? path.dirname(this.appPath) : this.appPath,
         env: buildApiEnvironment(this.paths, this.env),
@@ -120,7 +138,7 @@ class ApiServiceSupervisor extends EventEmitter {
       child.stdout?.pipe(logStream, { end: false })
       child.stderr?.pipe(logStream, { end: false })
       child.once('error', (error) => {
-        logStream.write(`[${new Date().toISOString()}] process error: ${errorMessage(error)}\n`)
+        writeStructuredLog(logStream, 'process_error', { message: errorMessage(error) })
         this.processError = error
         if (this.child === child) this.child = null
         logStream.end(() => {
@@ -128,7 +146,7 @@ class ApiServiceSupervisor extends EventEmitter {
         })
       })
       child.once('exit', (code, signal) => {
-        logStream.write(`[${new Date().toISOString()}] exited code=${code} signal=${signal || 'none'}\n`)
+        writeStructuredLog(logStream, 'process_exit', { code, signal: signal || null })
         logStream.end(() => {
           if (this.logStream === logStream) this.logStream = null
         })
@@ -189,11 +207,17 @@ class ApiServiceSupervisor extends EventEmitter {
   }
 
   async restart() {
-    await this.stop()
-    return this.start()
+    return this.enqueue(async () => {
+      await this.stopInternal()
+      return this.startInternal()
+    })
   }
 
   async stop() {
+    return this.enqueue(() => this.stopInternal())
+  }
+
+  async stopInternal() {
     const child = this.child
     if (!child) {
       this.update({ state: 'stopped', pid: null })

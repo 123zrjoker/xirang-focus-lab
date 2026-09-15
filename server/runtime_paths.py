@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+import platform
 from pathlib import Path
 
 
@@ -68,4 +69,38 @@ def runtime_path_summary() -> dict[str, str]:
         "vectorIndex": str(default_vector_index_path()),
         "checkpoint": str(default_checkpoint_path()),
         "credentialDirectory": str(default_credential_path().parent),
+    }
+
+
+def _path_diagnostic(path: Path) -> dict[str, object]:
+    resolved = path.expanduser().resolve()
+    existing_parent = resolved if resolved.exists() and resolved.is_dir() else resolved.parent
+    while not existing_parent.exists() and existing_parent != existing_parent.parent:
+        existing_parent = existing_parent.parent
+    size_bytes = resolved.stat().st_size if resolved.exists() and resolved.is_file() else None
+    return {
+        "path": str(resolved),
+        "exists": resolved.exists(),
+        "kind": "file" if resolved.is_file() or (not resolved.exists() and bool(resolved.suffix)) else "directory",
+        "writable": os.access(existing_parent, os.W_OK),
+        "sizeBytes": size_bytes,
+    }
+
+
+def runtime_diagnostics() -> dict[str, object]:
+    """Return non-secret process and storage diagnostics for local support."""
+
+    return {
+        "platform": platform.system(),
+        "platformRelease": platform.release(),
+        "pythonVersion": platform.python_version(),
+        "processId": os.getpid(),
+        "desktopManaged": bool(os.environ.get("XIRANG_DATA_DIR", "").strip()),
+        "paths": {
+            "dataRoot": _path_diagnostic(default_data_root()),
+            "modelRoot": _path_diagnostic(default_model_root()),
+            "vectorIndex": _path_diagnostic(default_vector_index_path()),
+            "checkpoint": _path_diagnostic(default_checkpoint_path()),
+            "credentialDirectory": _path_diagnostic(default_credential_path().parent),
+        },
     }

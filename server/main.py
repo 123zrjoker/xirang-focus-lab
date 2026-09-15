@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import atexit
 import json
+from threading import RLock
 from typing import Literal, Optional
 
 from fastapi import FastAPI, HTTPException
@@ -46,7 +47,7 @@ from .agent.planner import DeepSeekActionPlanner
 from .agent.prompts import build_prompt_registry
 from .agent.tools import build_read_only_registry
 from .agent.tracing import TraceRecorder
-from .runtime_paths import runtime_path_summary
+from .runtime_paths import runtime_diagnostics, runtime_path_summary
 
 
 def to_camel(value: str) -> str:
@@ -275,6 +276,7 @@ agent_checkpoint_path = resolve_checkpoint_path()
 agent_checkpointer = build_sqlite_checkpointer(agent_checkpoint_path)
 agent_trace_recorder = TraceRecorder(agent_checkpoint_path)
 agent_prompt_registry = build_prompt_registry()
+agent_operation_lock = RLock()
 
 
 def close_agent_runtime() -> None:
@@ -312,6 +314,19 @@ def health() -> dict:
         "generation": generation_provider.status(),
         "index": index,
         "runtime": runtime_path_summary(),
+    }
+
+
+@app.get("/api/diagnostics")
+def diagnostics() -> dict:
+    return {
+        "status": "ok",
+        "version": __version__,
+        "runtime": runtime_diagnostics(),
+        "agent": {
+            "graphVersion": AGENT_GRAPH_VERSION,
+            "operationMode": "serialized",
+        },
     }
 
 
@@ -413,13 +428,14 @@ def agent_foundation_status() -> AgentFoundationStatusResponse:
 
 @app.post("/api/agent/plan", response_model=AgentRunResult)
 def run_agent_plan(request: AgentPlanRequest) -> AgentRunResult:
-    status = generation_provider.status()
-    if not status.get("available"):
-        raise HTTPException(status_code=503, detail="DeepSeek 尚未配置，请先在设置页安全保存 API Key。")
-    try:
-        return build_active_agent_harness().run(request.context, request.thread_id)
-    except ValueError as error:
-        raise HTTPException(status_code=409, detail=str(error)) from error
+    with agent_operation_lock:
+        status = generation_provider.status()
+        if not status.get("available"):
+            raise HTTPException(status_code=503, detail="DeepSeek 尚未配置，请先在设置页安全保存 API Key。")
+        try:
+            return build_active_agent_harness().run(request.context, request.thread_id)
+        except ValueError as error:
+            raise HTTPException(status_code=409, detail=str(error)) from error
 
 
 _AGENT_PROGRESS_LABELS = {
@@ -470,20 +486,21 @@ def stream_agent_plan(request: AgentPlanRequest) -> StreamingResponse:
     status = generation_provider.status()
     if not status.get("available"):
         raise HTTPException(status_code=503, detail="DeepSeek 尚未配置，请先在设置页安全保存 API Key。")
-    harness = build_active_agent_harness()
 
     def generate():
-        yield _sse_event("progress", {
-            "node": "start",
-            "status": "created",
-            "label": "已建立持久 Agent 线程",
-        })
-        try:
-            yield from _agent_progress_events(harness.stream(request.context, request.thread_id))
-            result = harness.get_state(request.thread_id)
-            yield _sse_event("result", result.model_dump(mode="json", by_alias=True))
-        except Exception as error:
-            yield _agent_stream_error(error)
+        with agent_operation_lock:
+            harness = build_active_agent_harness()
+            yield _sse_event("progress", {
+                "node": "start",
+                "status": "created",
+                "label": "已建立持久 Agent 线程",
+            })
+            try:
+                yield from _agent_progress_events(harness.stream(request.context, request.thread_id))
+                result = harness.get_state(request.thread_id)
+                yield _sse_event("result", result.model_dump(mode="json", by_alias=True))
+            except Exception as error:
+                yield _agent_stream_error(error)
 
     return StreamingResponse(
         generate(),
@@ -494,40 +511,42 @@ def stream_agent_plan(request: AgentPlanRequest) -> StreamingResponse:
 
 @app.get("/api/agent/threads/{thread_id}", response_model=AgentRunResult)
 def get_agent_thread(thread_id: str) -> AgentRunResult:
-    try:
-        return build_active_agent_harness().get_state(thread_id)
-    except KeyError as error:
-        raise HTTPException(status_code=404, detail=str(error)) from error
-    except ValueError as error:
-        raise HTTPException(status_code=422, detail=str(error)) from error
+    with agent_operation_lock:
+        try:
+            return build_active_agent_harness().get_state(thread_id)
+        except KeyError as error:
+            raise HTTPException(status_code=404, detail=str(error)) from error
+        except ValueError as error:
+            raise HTTPException(status_code=422, detail=str(error)) from error
 
 
 @app.post("/api/agent/threads/{thread_id}/resume", response_model=AgentRunResult)
 def resume_agent_thread(thread_id: str, request: AgentResumeRequest) -> AgentRunResult:
-    try:
-        return build_active_agent_harness().resume(thread_id, request.decision)
-    except KeyError as error:
-        raise HTTPException(status_code=404, detail=str(error)) from error
-    except ValueError as error:
-        raise HTTPException(status_code=409, detail=str(error)) from error
+    with agent_operation_lock:
+        try:
+            return build_active_agent_harness().resume(thread_id, request.decision)
+        except KeyError as error:
+            raise HTTPException(status_code=404, detail=str(error)) from error
+        except ValueError as error:
+            raise HTTPException(status_code=409, detail=str(error)) from error
 
 
 @app.post("/api/agent/threads/{thread_id}/resume/stream")
 def stream_resume_agent_thread(thread_id: str, request: AgentResumeRequest) -> StreamingResponse:
-    harness = build_active_agent_harness()
-
     def generate():
-        yield _sse_event("progress", {
-            "node": "human_approval",
-            "status": "approved" if request.decision.decision != "reject" else "rejected",
-            "label": "正在提交你的审批决定",
-        })
-        try:
-            yield from _agent_progress_events(harness.resume_stream(thread_id, request.decision))
-            result = harness.get_state(thread_id)
-            yield _sse_event("result", result.model_dump(mode="json", by_alias=True))
-        except Exception as error:
-            yield _agent_stream_error(error)
+        with agent_operation_lock:
+            harness = build_active_agent_harness()
+            yield _sse_event("progress", {
+                "node": "human_approval",
+                "status": "approved" if request.decision.decision != "reject" else "rejected",
+                "label": "正在提交你的审批决定",
+            })
+            try:
+                yield from _agent_progress_events(harness.resume_stream(thread_id, request.decision))
+                result = harness.get_state(thread_id)
+                yield _sse_event("result", result.model_dump(mode="json", by_alias=True))
+            except Exception as error:
+                yield _agent_stream_error(error)
 
     return StreamingResponse(
         generate(),
@@ -538,30 +557,31 @@ def stream_resume_agent_thread(thread_id: str, request: AgentResumeRequest) -> S
 
 @app.post("/api/agent/threads/{thread_id}/ack", response_model=AgentRunResult)
 def acknowledge_agent_thread(thread_id: str, request: AgentExecutionAckRequest) -> AgentRunResult:
-    try:
-        return build_active_agent_harness().acknowledge(thread_id, request.execution_ack)
-    except KeyError as error:
-        raise HTTPException(status_code=404, detail=str(error)) from error
-    except ValueError as error:
-        raise HTTPException(status_code=409, detail=str(error)) from error
+    with agent_operation_lock:
+        try:
+            return build_active_agent_harness().acknowledge(thread_id, request.execution_ack)
+        except KeyError as error:
+            raise HTTPException(status_code=404, detail=str(error)) from error
+        except ValueError as error:
+            raise HTTPException(status_code=409, detail=str(error)) from error
 
 
 @app.post("/api/agent/threads/{thread_id}/ack/stream")
 def stream_acknowledge_agent_thread(thread_id: str, request: AgentExecutionAckRequest) -> StreamingResponse:
-    harness = build_active_agent_harness()
-
     def generate():
-        yield _sse_event("progress", {
-            "node": "execution_ack",
-            "status": "validating",
-            "label": "正在确认本地执行结果",
-        })
-        try:
-            yield from _agent_progress_events(harness.acknowledge_stream(thread_id, request.execution_ack))
-            result = harness.get_state(thread_id)
-            yield _sse_event("result", result.model_dump(mode="json", by_alias=True))
-        except Exception as error:
-            yield _agent_stream_error(error)
+        with agent_operation_lock:
+            harness = build_active_agent_harness()
+            yield _sse_event("progress", {
+                "node": "execution_ack",
+                "status": "validating",
+                "label": "正在确认本地执行结果",
+            })
+            try:
+                yield from _agent_progress_events(harness.acknowledge_stream(thread_id, request.execution_ack))
+                result = harness.get_state(thread_id)
+                yield _sse_event("result", result.model_dump(mode="json", by_alias=True))
+            except Exception as error:
+                yield _agent_stream_error(error)
 
     return StreamingResponse(
         generate(),

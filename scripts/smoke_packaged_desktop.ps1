@@ -35,8 +35,16 @@ try {
   $baseUrl = $null
   while ([DateTime]::UtcNow -lt $deadline -and -not $baseUrl) {
     if (Test-Path -LiteralPath $logPath) {
-      $match = Select-String -LiteralPath $logPath -Pattern 'starting packaged-sidecar on (http://127\.0\.0\.1:\d+)' | Select-Object -Last 1
-      if ($match) { $baseUrl = $match.Matches[0].Groups[1].Value }
+      $records = Get-Content -LiteralPath $logPath | ForEach-Object {
+        try { $_ | ConvertFrom-Json } catch { $null }
+      }
+      $startRecord = $records | Where-Object { $_.event -eq 'service_start' -and $_.launchKind -eq 'packaged-sidecar' } | Select-Object -Last 1
+      if ($startRecord) {
+        $baseUrl = $startRecord.baseUrl
+      } else {
+        $match = Select-String -LiteralPath $logPath -Pattern 'starting packaged-sidecar on (http://127\.0\.0\.1:\d+)' | Select-Object -Last 1
+        if ($match) { $baseUrl = $match.Matches[0].Groups[1].Value }
+      }
     }
     if (-not $baseUrl) { Start-Sleep -Milliseconds 250 }
   }

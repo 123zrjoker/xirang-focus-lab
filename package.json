@@ -4,12 +4,13 @@
   "description": "本地优先的注意力训练、专注启动与可审批 AI Agent 桌面应用",
   "author": "Xirang Project Contributors",
   "private": true,
-  "version": "0.6.0",
+  "version": "0.7.0",
   "type": "module",
   "main": "electron/main.cjs",
   "scripts": {
     "dev": "vite",
     "setup:api:py311": "py -3.11 -m venv .venv311 && .venv311\\Scripts\\python.exe -m pip install -r server\\requirements-dev.txt",
+    "setup:quality": "py -3.11 -m venv .venv-quality && .venv-quality\\Scripts\\python.exe -m pip install -r server\\requirements-quality.txt",
     "dev:api": ".venv311\\Scripts\\python.exe -m uvicorn server.main:app --host 127.0.0.1 --port 8000",
     "dev:api:deepseek": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/start_deepseek_api.ps1",
     "build": "tsc -b && vite build",
@@ -24,13 +25,16 @@
     "eval:generation:real": ".venv311\\Scripts\\python.exe -m server.evals.run_generation",
     "eval:agent": ".venv311\\Scripts\\python.exe -m server.evals.agent.run",
     "eval:agent:real": ".venv311\\Scripts\\python.exe -m server.evals.agent.run --real",
+    "perf:api": ".venv311\\Scripts\\python.exe -m server.evals.run_performance",
+    "quality:gate": "npm run test && npm run test:desktop && npm run test:api && npm run build && npm run eval:agent && npm run perf:api",
+    "quality:security": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/quality_security.ps1",
     "preview": "vite preview",
     "desktop:backend": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/build_desktop_backend.ps1",
     "desktop:backend:ensure": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/build_desktop_backend.ps1 -ReuseExisting",
     "desktop:smoke": "node scripts/smoke-desktop-api.cjs",
     "desktop:smoke:sidecar": "node scripts/smoke-desktop-api.cjs --sidecar",
     "desktop:smoke:packaged": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/smoke_packaged_desktop.ps1",
-    "desktop:smoke:portable": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/smoke_packaged_desktop.ps1 -ExecutablePath release\\Xirang-Portable-0.6.0-x64.exe",
+    "desktop:smoke:portable": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/smoke_packaged_desktop.ps1 -ExecutablePath release\\Xirang-Portable-0.7.0-x64.exe",
     "desktop": "npm run build && electron .",
     "desktop:open": "electron .",
     "desktop:pack": "npm run build && npm run desktop:backend:ensure && electron-builder --dir",
@@ -51,6 +55,9 @@
     "typescript": "^5.9.2",
     "vite": "^7.1.3",
     "vitest": "^4.1.11"
+  },
+  "overrides": {
+    "js-yaml": "4.3.2"
   },
   "build": {
     "appId": "com.focuslab.xirang",

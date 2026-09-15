@@ -17,3 +17,5 @@ __pycache__/
 .model-cache/
 server/data/
 artifacts/evals/*.json
+artifacts/performance/*.json
+artifacts/security/*.json

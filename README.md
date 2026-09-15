@@ -1,6 +1,8 @@
 # 息壤 · 注意力训练与专注启动实验室
 
-0.6.0 桌面端一体化候选版已完成本机实现与自动化验收：Electron 主进程会为每次启动分配随机本机回环端口，自动启动、探活、监控并关闭 FastAPI sidecar；沙箱化 preload 只向页面暴露 API 地址、运行状态和重启操作，不开放 Node 能力。Checkpoint、DPAPI 凭据、向量索引和日志统一使用稳定的本机数据目录，模型作为只读资源随桌面包提供。设置页会显示服务状态；完整 JSON 备份现已覆盖应用记录与 IndexedDB 知识库，同时继续排除明文 Key、可重建向量索引和临时 Agent 线程。正式冻结前仍需在独立干净 Windows 用户环境完成安装、卸载与业务全链路人工验收。
+0.7.0 工程质量与可靠性正在实施：Windows CI 已接入前端、Electron、API、生产构建、Fake Agent Eval 和 API 性能基线；npm 与 Python 依赖会生成 CycloneDX SBOM 并经过安全审计。Electron sidecar 的启动/停止/重启已串行化且输出 JSONL 日志，FastAPI 新增不暴露凭据的本机诊断接口，共享 SQLite Checkpoint 操作也增加进程内并发保护。当前依赖已升级并通过真实 BGE 与 ONNX reranker 烟雾测试。
+
+0.6.0 桌面端一体化已按当前 Windows 环境结果完成阶段验收：Electron 主进程会为每次启动分配随机本机回环端口，自动启动、探活、监控并关闭 FastAPI sidecar；沙箱化 preload 只向页面暴露 API 地址、运行状态和重启操作，不开放 Node 能力。Checkpoint、DPAPI 凭据、向量索引和日志统一使用稳定的本机数据目录，模型作为只读资源随桌面包提供。独立干净 Windows 复验不被当前开发机结果替代，已保留到 0.9.0 发布候选门禁。
 
 0.5.2 完成独立 Agent Evaluation Harness：`AgentHarness.evaluate()` 可加载带 SHA-256 与版本号的固定数据集，批量复现工具选择/顺序/参数字段、计划结构、完整轨迹、人工审批、SQLite 恢复、修订冲突、幂等副作用、引用、提示注入、故障恢复、延迟、tokens 与成本。15 条 Fake Eval 安全与质量门禁全部通过；5 条真实 DeepSeek 保留集全部通过，输入/输出为 11,274 / 2,176 tokens，峰时价格口径成本上界约 $0.00505，P50/P95 为 15.842/16.815 秒。0.5.1 Checkpoint 可继续恢复，未知图版本会失败关闭；Trace 追踪 Prompt/工具/图版本并同时按字段名和内容模式脱敏凭据。
 
@@ -125,9 +127,18 @@ npm run eval:retrieval:ablation
 npm run eval:generation:real
 npm run eval:agent
 npm run eval:agent:real -- --allow-paid-api
+npm run perf:api
+npm run quality:gate
 ```
 
 真实生成与 Agent 保留集评测需要先在设置页保存 DeepSeek Key；Agent 命令还要求 `--allow-paid-api` 显式确认付费调用。命令只读取本机 DPAPI 密文，报告不会记录 Key。已冻结报告见 [`0.4.4 RAG 生成评测`](artifacts/evals/0.4.4-generation-real-eval.md)、[`0.5.2 Agent Fake Eval`](artifacts/evals/0.5.2-agent-fake-eval.md) 和 [`0.5.2 Agent DeepSeek 保留集`](artifacts/evals/0.5.2-agent-deepseek-holdout.md)。
+
+首次执行依赖安全门禁时创建独立审计环境；该命令生成 npm/Python CycloneDX SBOM 和可追踪的 Markdown 摘要，不调用付费模型：
+
+```bash
+npm run setup:quality
+npm run quality:security
+```
 
 构建结果位于 `dist/`。
 

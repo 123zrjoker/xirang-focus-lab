@@ -147,3 +147,45 @@ test('spawn errors fail fast instead of waiting for the startup timeout', async 
   await supervisor.waitForLogClose()
   fs.rmSync(root, { recursive: true, force: true })
 })
+
+test('lifecycle operations are serialized and logs are structured JSON lines', async () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'xirang-lifecycle-'))
+  const children = []
+  const supervisor = new ApiServiceSupervisor({
+    paths: {
+      dataRoot: root, modelRoot: root, backendRoot: root, logRoot: root,
+      checkpointPath: path.join(root, 'checkpoint'), credentialDir: path.join(root, 'credentials'),
+      vectorIndexDir: path.join(root, 'vectors'), vectorMetaPath: path.join(root, 'meta'),
+    },
+    appPath: process.cwd(),
+    isPackaged: false,
+    env: { XIRANG_DESKTOP_API_EXECUTABLE: process.execPath },
+    spawnProcess: () => {
+      const child = new EventEmitter()
+      child.pid = 5000 + children.length
+      child.stdout = new PassThrough()
+      child.stderr = new PassThrough()
+      child.kill = () => {
+        queueMicrotask(() => child.emit('exit', 0, null))
+        return true
+      }
+      children.push(child)
+      return child
+    },
+    fetchImpl: async () => ({ ok: true, json: async () => ({ status: 'ok' }) }),
+  })
+
+  await supervisor.start()
+  await Promise.all([supervisor.restart(), supervisor.restart()])
+  assert.equal(supervisor.snapshot().state, 'ready')
+  assert.equal(children.length, 3)
+  await supervisor.stop()
+  assert.equal(supervisor.snapshot().state, 'stopped')
+
+  const records = fs.readFileSync(path.join(root, 'desktop-api.log'), 'utf8')
+    .trim().split(/\r?\n/).map((line) => JSON.parse(line))
+  assert.equal(records.filter((record) => record.event === 'service_start').length, 3)
+  assert.equal(records.filter((record) => record.event === 'process_exit').length, 3)
+  assert.ok(records.every((record) => typeof record.timestamp === 'string'))
+  fs.rmSync(root, { recursive: true, force: true })
+})
