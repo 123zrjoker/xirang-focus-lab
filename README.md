@@ -1,6 +1,6 @@
 # 息壤 · 注意力训练与专注启动实验室
 
-0.7.0 工程质量与可靠性已完成当前 Windows 环境冻结：Windows CI 配置、CycloneDX SBOM、安全审计、结构化诊断、Electron/Agent 并发保护、两级有界查询缓存、可取消索引后台任务，以及 API/SSE/真实本地模型/资源门禁均已建立。0.7.0 sidecar、unpacked、NSIS 与 Portable 已全量重建并通过本机启动、后台索引、退出回收、安装/卸载回归，SHA-256 已记录；阶段关闭只剩分支推送后的远端 Windows CI 首次运行证据。
+0.7.0 工程质量与可靠性已完成：Windows CI、CycloneDX SBOM、安全审计、结构化诊断、Electron/Agent 并发保护、两级有界查询缓存、可取消索引后台任务，以及 API/SSE/真实本地模型/资源门禁均已建立。0.7.0 sidecar、unpacked、NSIS 与 Portable 已全量重建并通过本机启动、后台索引、退出回收、安装/卸载回归，SHA-256 已记录；首次远端 Windows CI 的质量与安全 Job 也已全部通过。
 
 0.6.0 桌面端一体化已按当前 Windows 环境结果完成阶段验收：Electron 主进程会为每次启动分配随机本机回环端口，自动启动、探活、监控并关闭 FastAPI sidecar；沙箱化 preload 只向页面暴露 API 地址、运行状态和重启操作，不开放 Node 能力。Checkpoint、DPAPI 凭据、向量索引和日志统一使用稳定的本机数据目录，模型作为只读资源随桌面包提供。独立干净 Windows 复验不被当前开发机结果替代，已保留到 0.9.0 发布候选门禁。
 
