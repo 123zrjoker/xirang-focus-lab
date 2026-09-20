@@ -121,7 +121,8 @@ if ([diagramHtml, diagramPng, diagramPrompt, diagramManifest].every(fs.existsSyn
   } catch (error) {
     fail(`架构图渲染清单无效：${error.message}`)
   }
-  const sourceSha256 = crypto.createHash('sha256').update(html).digest('hex')
+  const normalizedHtml = Buffer.from(htmlText.replaceAll('\r\n', '\n'), 'utf8')
+  const sourceSha256 = crypto.createHash('sha256').update(normalizedHtml).digest('hex')
   if (manifest?.sourceSha256 !== sourceSha256) {
     fail('架构图 PNG 与 HTML 图源不同步，请运行 npm run portfolio:render-diagrams')
   }

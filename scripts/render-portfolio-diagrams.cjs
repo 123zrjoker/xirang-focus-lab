@@ -56,7 +56,7 @@ function renderDiagram(diagram) {
       throw new Error(result.stderr || result.stdout || `浏览器退出码 ${result.status}`)
     }
     const size = pngSize(diagram.output)
-    const source = fs.readFileSync(diagram.source)
+    const source = Buffer.from(fs.readFileSync(diagram.source, 'utf8').replaceAll('\r\n', '\n'), 'utf8')
     fs.writeFileSync(diagram.manifest, `${JSON.stringify({
       source: path.basename(diagram.source),
       output: path.basename(diagram.output),
