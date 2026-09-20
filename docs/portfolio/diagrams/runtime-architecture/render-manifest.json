@@ -1,0 +1,8 @@
+{
+  "source": "index.html",
+  "output": "runtime-architecture.png",
+  "sourceSha256": "046204c287087383b239ad134e0ee8f18bc136c166b402d3ef85b8224fd1c552",
+  "width": 2880,
+  "height": 1640,
+  "renderer": "chrome.exe"
+}

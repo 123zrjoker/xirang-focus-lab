@@ -9,6 +9,8 @@
   "main": "electron/main.cjs",
   "scripts": {
     "dev": "vite",
+    "portfolio:check": "node scripts/check-portfolio-materials.cjs",
+    "portfolio:render-diagrams": "node scripts/render-portfolio-diagrams.cjs",
     "setup:api:py311": "py -3.11 -m venv .venv311 && .venv311\\Scripts\\python.exe -m pip install -r server\\requirements-dev.txt",
     "setup:quality": "py -3.11 -m venv .venv-quality && .venv-quality\\Scripts\\python.exe -m pip install -r server\\requirements-quality.txt",
     "dev:api": ".venv311\\Scripts\\python.exe -m uvicorn server.main:app --host 127.0.0.1 --port 8000",
@@ -27,7 +29,7 @@
     "eval:agent:real": ".venv311\\Scripts\\python.exe -m server.evals.agent.run --real",
     "perf:api": ".venv311\\Scripts\\python.exe -m server.evals.run_performance",
     "perf:models": ".venv311\\Scripts\\python.exe -m server.evals.run_model_performance",
-    "quality:gate": "npm run test && npm run test:desktop && npm run test:api && npm run build && npm run eval:agent && npm run perf:api",
+    "quality:gate": "npm run portfolio:check && npm run test && npm run test:desktop && npm run test:api && npm run build && npm run eval:agent && npm run perf:api",
     "quality:security": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/quality_security.ps1",
     "preview": "vite preview",
     "desktop:backend": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/build_desktop_backend.ps1",

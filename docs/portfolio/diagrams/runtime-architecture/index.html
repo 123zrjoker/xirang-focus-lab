@@ -1,0 +1,306 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>息壤 0.7.0 运行时架构</title>
+  <style>
+    :root {
+      --parchment: #f5f4ed;
+      --ivory: #faf9f5;
+      --near-black: #141413;
+      --olive: #504e49;
+      --stone: #6b6a64;
+      --border: #e8e6dc;
+      --brand: #1B365D;
+      --brand-tint: #EEF2F7;
+      --store-fill: #EAE9E2;
+      --external-fill: #E9E8E1;
+    }
+
+    * { box-sizing: border-box; }
+
+    html,
+    body {
+      width: 100%;
+      height: 100%;
+      margin: 0;
+      overflow: hidden;
+      background: var(--parchment);
+      color: var(--near-black);
+    }
+
+    body {
+      font-family: "Microsoft YaHei", "Noto Sans CJK SC", sans-serif;
+    }
+
+    .diagram {
+      width: 1440px;
+      height: 820px;
+      padding: 44px 56px 36px;
+      background: var(--parchment);
+    }
+
+    .eyebrow {
+      margin: 0 0 10px;
+      color: var(--brand);
+      font-family: Consolas, "Microsoft YaHei", monospace;
+      font-size: 14px;
+      font-weight: 700;
+      letter-spacing: 3px;
+    }
+
+    h1 {
+      margin: 0;
+      font-family: "Songti SC", SimSun, Georgia, serif;
+      font-size: 38px;
+      font-weight: 700;
+      letter-spacing: 0.5px;
+    }
+
+    .dek {
+      margin: 8px 0 20px;
+      color: var(--olive);
+      font-family: "Songti SC", SimSun, Georgia, serif;
+      font-size: 18px;
+      line-height: 1.5;
+    }
+
+    svg {
+      display: block;
+      width: 100%;
+      height: 650px;
+    }
+
+    .boundary {
+      fill: none;
+      stroke: var(--stone);
+      stroke-width: 1.4;
+      stroke-dasharray: 7 7;
+    }
+
+    .node {
+      fill: var(--ivory);
+      stroke: var(--near-black);
+      stroke-width: 1.5;
+      rx: 8;
+    }
+
+    .node-focal {
+      fill: var(--brand-tint);
+      stroke: var(--brand);
+      stroke-width: 2.2;
+      rx: 8;
+    }
+
+    .node-store {
+      fill: var(--store-fill);
+      stroke: var(--olive);
+      stroke-width: 1.4;
+      rx: 8;
+    }
+
+    .node-external {
+      fill: var(--external-fill);
+      stroke: var(--stone);
+      stroke-width: 1.5;
+      stroke-dasharray: 6 5;
+      rx: 8;
+    }
+
+    .line {
+      fill: none;
+      stroke: var(--olive);
+      stroke-width: 1.7;
+      stroke-linecap: round;
+      stroke-linejoin: round;
+    }
+
+    .line-focal {
+      fill: none;
+      stroke: var(--brand);
+      stroke-width: 2.2;
+      stroke-linecap: round;
+      stroke-linejoin: round;
+    }
+
+    .chevron,
+    .chevron-focal {
+      fill: none;
+      stroke-width: 1.8;
+      stroke-linecap: round;
+      stroke-linejoin: round;
+    }
+
+    .chevron { stroke: var(--olive); }
+    .chevron-focal { stroke: var(--brand); stroke-width: 2.2; }
+
+    .layer-label,
+    .boundary-label,
+    .edge-label,
+    .node-tag {
+      font-family: Consolas, "Microsoft YaHei", monospace;
+      letter-spacing: 1.8px;
+    }
+
+    .layer-label {
+      fill: var(--stone);
+      font-size: 13px;
+      font-weight: 700;
+    }
+
+    .boundary-label {
+      fill: var(--stone);
+      font-size: 12px;
+      font-weight: 700;
+    }
+
+    .edge-label {
+      fill: var(--olive);
+      font-size: 12px;
+    }
+
+    .node-tag {
+      fill: var(--brand);
+      font-size: 11px;
+      font-weight: 700;
+    }
+
+    .node-title {
+      fill: var(--near-black);
+      font-family: "Songti SC", SimSun, Georgia, serif;
+      font-size: 20px;
+      font-weight: 700;
+    }
+
+    .node-copy {
+      fill: var(--olive);
+      font-size: 13px;
+    }
+
+    .mask { fill: var(--parchment); }
+  </style>
+</head>
+<body>
+  <main class="diagram">
+    <p class="eyebrow">RUNTIME ARCHITECTURE · 0.7.0</p>
+    <h1>写入边界留在用户设备，Agent 只在批准后提出意图</h1>
+    <p class="dek">界面拥有业务数据；Electron 管理本机服务；检索与模型推理默认在设备内，只有显式生成会访问外部 Provider。</p>
+
+    <svg viewBox="0 0 1280 650" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="diagram-title diagram-desc">
+      <title id="diagram-title">息壤 0.7.0 运行时架构与数据边界</title>
+      <desc id="diagram-desc">React 界面和 Electron 桌面壳连接本机 FastAPI。FastAPI 组织 LangGraph Agent 与本地 RAG，浏览器业务数据和服务数据分开存储。DeepSeek 是唯一设备外节点，只接收用户预览并明确触发的最小快照或证据。</desc>
+      <defs>
+        <pattern id="dots" width="22" height="22" patternUnits="userSpaceOnUse">
+          <circle cx="1" cy="1" r="0.9" fill="#E3E2DC"/>
+        </pattern>
+      </defs>
+
+      <rect width="1280" height="650" fill="#f5f4ed"/>
+      <rect width="1280" height="650" fill="url(#dots)" opacity="0.55"/>
+
+      <rect class="boundary" x="32" y="36" width="1000" height="608" rx="8"/>
+      <text class="boundary-label" x="56" y="62">DEVICE BOUNDARY · WINDOWS / BROWSER</text>
+      <text class="boundary-label" x="1080" y="270">EXPLICIT OUTBOUND</text>
+
+      <text class="layer-label" x="56" y="112">01 · PRODUCT SURFACE</text>
+      <text class="layer-label" x="56" y="284">02 · LOCAL SERVICE</text>
+      <text class="layer-label" x="56" y="492">03 · LOCAL DATA &amp; MODELS</text>
+
+      <rect class="node" x="88" y="132" width="244" height="92"/>
+      <text class="node-tag" x="112" y="158">BUSINESS OWNER</text>
+      <text class="node-title" x="112" y="186">React 产品界面</text>
+      <text class="node-copy" x="112" y="210">训练 / 专注 / 快照 / 人工审批</text>
+
+      <rect class="node" x="400" y="132" width="244" height="92"/>
+      <text class="node-tag" x="424" y="158">DESKTOP CONTROL</text>
+      <text class="node-title" x="424" y="186">Electron 桌面壳</text>
+      <text class="node-copy" x="424" y="210">随机端口 / 探活 / 退出回收</text>
+
+      <rect class="node" x="304" y="304" width="300" height="100"/>
+      <text class="node-tag" x="328" y="332">LOOPBACK API</text>
+      <text class="node-title" x="328" y="362">FastAPI 本机服务</text>
+      <text class="node-copy" x="328" y="388">SSE / 诊断 / 后台索引任务</text>
+
+      <rect class="node-focal" x="700" y="304" width="272" height="100"/>
+      <text class="node-tag" x="724" y="332">APPROVAL BOUNDARY</text>
+      <text class="node-title" x="724" y="362">LangGraph + Harness</text>
+      <text class="node-copy" x="724" y="388">权限 / 恢复 / 校验 / Mutation Intent</text>
+
+      <rect class="node-external" x="1080" y="304" width="168" height="100"/>
+      <text class="node-tag" x="1104" y="332">PROVIDER</text>
+      <text class="node-title" x="1104" y="362">DeepSeek API</text>
+      <text class="node-copy" x="1104" y="388">最小快照 / 证据</text>
+
+      <rect class="node-store" x="88" y="520" width="244" height="92"/>
+      <text class="node-tag" x="112" y="546">RENDERER DATA</text>
+      <text class="node-title" x="112" y="574">业务数据与知识库</text>
+      <text class="node-copy" x="112" y="598">localStorage / IndexedDB v2</text>
+
+      <rect class="node-store" x="380" y="520" width="280" height="92"/>
+      <text class="node-tag" x="404" y="546">SERVICE DATA</text>
+      <text class="node-title" x="404" y="574">Checkpoint / Key / Index</text>
+      <text class="node-copy" x="404" y="598">SQLite / DPAPI / Qdrant / JSONL</text>
+
+      <rect class="node" x="700" y="456" width="272" height="100"/>
+      <text class="node-tag" x="724" y="484">LOCAL RETRIEVAL</text>
+      <text class="node-title" x="724" y="514">混合 RAG Runtime</text>
+      <text class="node-copy" x="724" y="540">BM25 / BGE / RRF / Cross-Encoder</text>
+
+      <rect class="node-store" x="748" y="580" width="176" height="56"/>
+      <text class="node-tag" x="772" y="604">READ-ONLY MODELS</text>
+      <text class="node-copy" x="772" y="624">固定版本 + SHA-256</text>
+
+      <path class="line" d="M148 224 V520"/>
+      <path class="chevron" d="M142 510 L148 520 L154 510"/>
+      <rect class="mask" x="84" y="356" width="128" height="24"/>
+      <text class="edge-label" x="94" y="373">原子读写 / 备份</text>
+
+      <path class="line" d="M272 224 V264 H380 V304"/>
+      <path class="chevron" d="M374 294 L380 304 L386 294"/>
+      <rect class="mask" x="286" y="246" width="100" height="24"/>
+      <text class="edge-label" x="296" y="263">HTTP / SSE</text>
+
+      <path class="line" d="M522 224 V264 H454 V304"/>
+      <path class="chevron" d="M448 294 L454 304 L460 294"/>
+      <rect class="mask" x="470" y="250" width="126" height="24"/>
+      <text class="edge-label" x="478" y="267">启动 / 探活 / 停止</text>
+
+      <path class="line-focal" d="M604 354 H700"/>
+      <path class="chevron-focal" d="M690 348 L700 354 L690 360"/>
+      <path class="chevron-focal" d="M614 348 L604 354 L614 360"/>
+      <rect class="mask" x="610" y="326" width="84" height="20"/>
+      <text class="edge-label" x="618" y="341">状态 / 意图</text>
+
+      <path class="line-focal" d="M972 354 H1080"/>
+      <path class="chevron-focal" d="M1070 348 L1080 354 L1070 360"/>
+      <path class="chevron-focal" d="M982 348 L972 354 L982 360"/>
+      <rect class="mask" x="984" y="326" width="84" height="20"/>
+      <text class="edge-label" x="992" y="341">显式生成</text>
+
+      <path class="line" d="M454 404 V520"/>
+      <path class="chevron" d="M448 510 L454 520 L460 510"/>
+      <rect class="mask" x="466" y="452" width="132" height="24"/>
+      <text class="edge-label" x="474" y="469">Checkpoint / 凭据</text>
+
+      <path class="line" d="M604 380 H652 V506 H700"/>
+      <path class="chevron" d="M690 500 L700 506 L690 512"/>
+      <rect class="mask" x="618" y="430" width="112" height="24"/>
+      <text class="edge-label" x="626" y="447">检索 / 引用上下文</text>
+
+      <path class="line" d="M836 404 V456"/>
+      <path class="chevron" d="M830 446 L836 456 L842 446"/>
+      <rect class="mask" x="846" y="418" width="94" height="24"/>
+      <text class="edge-label" x="854" y="435">只读工具调用</text>
+
+      <path class="line" d="M700 530 H660"/>
+      <path class="chevron" d="M670 524 L660 530 L670 536"/>
+      <rect class="mask" x="626" y="488" width="72" height="24"/>
+      <text class="edge-label" x="634" y="505">Qdrant</text>
+
+      <path class="line" d="M836 556 V580"/>
+      <path class="chevron" d="M830 570 L836 580 L842 570"/>
+    </svg>
+  </main>
+</body>
+</html>

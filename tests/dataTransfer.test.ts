@@ -1,8 +1,9 @@
+import { readFileSync } from 'node:fs'
 import { describe, expect, it } from 'vitest'
 import { createBackupText, createCsvText, parseBackupData, parseBackupText } from '../src/lib/dataTransfer'
 import { createDefaultState } from '../src/lib/storage'
 
-describe('v10 data transfer', () => {
+describe('v11 data transfer', () => {
   it('round-trips launch and action-slip collections through JSON backup', () => {
     const state = createDefaultState()
     state.focusLaunches.push({
@@ -61,5 +62,20 @@ describe('v10 data transfer', () => {
     const restored = parseBackupData(createBackupText(state, knowledgeBase))
     expect(restored.state.schemaVersion).toBe(state.schemaVersion)
     expect(restored.knowledgeBase).toEqual(knowledgeBase)
+  })
+
+  it('imports the public synthetic portfolio backup with current migration rules', () => {
+    const source = readFileSync(
+      new URL('../docs/portfolio/demo-data/xirang-demo-backup.json', import.meta.url),
+      'utf8',
+    )
+    const restored = parseBackupData(source).state
+
+    expect(restored.schemaVersion).toBe(11)
+    expect(restored.profile.onboardingComplete).toBe(true)
+    expect(restored.actionSlips).toHaveLength(3)
+    expect(restored.actionSlips.filter((item) => item.status === 'current')).toHaveLength(1)
+    expect(restored.focusSessions).toHaveLength(3)
+    expect(restored.agentPlans[0]?.title).toContain('合成演示')
   })
 })

@@ -1,0 +1,253 @@
+{
+  "product": "xirang",
+  "backupVersion": 2,
+  "schemaVersion": 11,
+  "exportedAt": "2026-09-20T09:00:00.000Z",
+  "demoData": {
+    "synthetic": true,
+    "referenceDate": "2026-09-20",
+    "notice": "全部记录均为合成演示数据，不来自真实用户。"
+  },
+  "state": {
+    "schemaVersion": 11,
+    "profile": {
+      "goal": "work",
+      "dailyTargetMinutes": 30,
+      "preferredFocusMinutes": 25,
+      "onboardingComplete": true,
+      "levels": {
+        "schulte": 2,
+        "go-no-go": 2,
+        "vigilance": 1,
+        "stroop": 2
+      },
+      "adaptation": {
+        "schulte": { "qualifiedWindows": 0, "difficultWindows": 0, "protectionRemaining": 0, "lastOutcome": "stable" },
+        "go-no-go": { "qualifiedWindows": 0, "difficultWindows": 0, "protectionRemaining": 0, "lastOutcome": "stable" },
+        "vigilance": { "qualifiedWindows": 0, "difficultWindows": 0, "protectionRemaining": 0, "lastOutcome": "insufficient" },
+        "stroop": { "qualifiedWindows": 0, "difficultWindows": 0, "protectionRemaining": 0, "lastOutcome": "stable" }
+      }
+    },
+    "settings": {
+      "soundEnabled": false,
+      "animationsEnabled": true,
+      "trainingTipsEnabled": true,
+      "desktopNotificationsEnabled": false
+    },
+    "assessments": [],
+    "sessions": [
+      {
+        "id": "demo-training-schulte-01",
+        "completedAt": "2026-09-17T09:10:00.000Z",
+        "taskType": "schulte",
+        "durationSec": 182.4,
+        "accuracy": 0.94,
+        "medianReactionMs": 1210,
+        "omissions": 1,
+        "commissions": 0,
+        "errors": 1,
+        "score": 82,
+        "level": 2
+      },
+      {
+        "id": "demo-training-gonogo-01",
+        "completedAt": "2026-09-18T09:10:00.000Z",
+        "taskType": "go-no-go",
+        "durationSec": 204.8,
+        "accuracy": 0.91,
+        "medianReactionMs": 535,
+        "omissions": 1,
+        "commissions": 2,
+        "errors": 3,
+        "score": 78,
+        "level": 2
+      },
+      {
+        "id": "demo-training-stroop-01",
+        "completedAt": "2026-09-19T09:10:00.000Z",
+        "taskType": "stroop",
+        "durationSec": 191.2,
+        "accuracy": 0.93,
+        "medianReactionMs": 690,
+        "omissions": 0,
+        "commissions": 2,
+        "errors": 2,
+        "score": 81,
+        "level": 2
+      }
+    ],
+    "focusSessions": [
+      {
+        "id": "demo-focus-01",
+        "taskName": "整理 Agent 评测说明",
+        "plannedDurationMin": 25,
+        "actualDurationSec": 1500,
+        "completionRate": 90,
+        "distractionCount": 1,
+        "pageLeaveCount": 0,
+        "subjectiveFocus": 4,
+        "endReason": "completed",
+        "distractions": [
+          {
+            "id": "demo-distraction-01",
+            "note": "合成记录：想查看消息，已写入停车场。",
+            "reason": "phone",
+            "createdAt": "2026-09-17T02:12:00.000Z"
+          }
+        ],
+        "round": 1,
+        "focusMode": "free",
+        "pomodoroCycle": 1,
+        "completedAt": "2026-09-17T02:30:00.000Z",
+        "taskCategory": "writing",
+        "firstAction": "打开报告并核对第一张指标表",
+        "completionDefinition": "修正表格并补充解释边界",
+        "energyBefore": 2,
+        "resistanceBefore": 2,
+        "actionSlipId": "demo-todo-eval",
+        "nextStep": "核对真实模型报告的成本口径"
+      },
+      {
+        "id": "demo-focus-02",
+        "taskName": "补齐 sidecar 生命周期测试",
+        "plannedDurationMin": 30,
+        "actualDurationSec": 1680,
+        "completionRate": 80,
+        "distractionCount": 0,
+        "pageLeaveCount": 1,
+        "subjectiveFocus": 4,
+        "endReason": "completed",
+        "distractions": [],
+        "round": 1,
+        "focusMode": "free",
+        "pomodoroCycle": 1,
+        "completedAt": "2026-09-18T07:40:00.000Z",
+        "taskCategory": "coding",
+        "firstAction": "先写重启与退出交错的失败用例",
+        "completionDefinition": "失败用例可以稳定复现并通过修复",
+        "energyBefore": 3,
+        "resistanceBefore": 2,
+        "actionSlipId": "demo-todo-lifecycle",
+        "nextStep": "补充结构化日志断言"
+      },
+      {
+        "id": "demo-focus-03",
+        "taskName": "整理架构与数据边界",
+        "plannedDurationMin": 25,
+        "actualDurationSec": 1380,
+        "completionRate": 85,
+        "distractionCount": 1,
+        "pageLeaveCount": 0,
+        "subjectiveFocus": 3,
+        "endReason": "completed",
+        "distractions": [
+          {
+            "id": "demo-distraction-02",
+            "note": "合成记录：想到视频脚本，已记为下一步。",
+            "reason": "other",
+            "createdAt": "2026-09-19T08:08:00.000Z"
+          }
+        ],
+        "round": 1,
+        "focusMode": "pomodoro",
+        "pomodoroCycle": 1,
+        "completedAt": "2026-09-19T08:25:00.000Z",
+        "taskCategory": "writing",
+        "firstAction": "先列出四类数据存储位置",
+        "completionDefinition": "完成驻留矩阵和出站边界",
+        "energyBefore": 2,
+        "resistanceBefore": 3,
+        "actionSlipId": "demo-todo-portfolio",
+        "nextStep": "按演示脚本录制架构段落"
+      }
+    ],
+    "dailyPlans": [
+      {
+        "dateKey": "2026-09-20",
+        "createdAt": "2026-09-20T00:10:00.000Z",
+        "mode": "standard",
+        "intensity": "regular",
+        "items": [
+          { "taskType": "schulte", "estimatedMinutes": 3, "reason": "合成计划：用短任务进入状态" },
+          { "taskType": "stroop", "estimatedMinutes": 3, "reason": "合成计划：保持任务切换练习" }
+        ],
+        "focusMinutes": 25,
+        "focusReason": "把训练带回一项可交付工作。",
+        "summary": "合成演示计划，不代表个性化效果建议。"
+      }
+    ],
+    "focusLaunches": [],
+    "actionSlips": [
+      {
+        "id": "demo-todo-portfolio",
+        "title": "完成 0.8.0 招聘方复现入口",
+        "status": "current",
+        "createdAt": "2026-09-16T01:00:00.000Z",
+        "updatedAt": "2026-09-19T08:25:00.000Z",
+        "nextStep": "运行公开材料检查并修复失效链接",
+        "focusSessionIds": ["demo-focus-03"]
+      },
+      {
+        "id": "demo-todo-eval",
+        "title": "核对 Agent 评测指标与解释边界",
+        "status": "inbox",
+        "createdAt": "2026-09-16T01:05:00.000Z",
+        "updatedAt": "2026-09-17T02:30:00.000Z",
+        "nextStep": "逐项回链冻结报告",
+        "focusSessionIds": ["demo-focus-01"]
+      },
+      {
+        "id": "demo-todo-lifecycle",
+        "title": "补齐 sidecar 生命周期回归",
+        "status": "completed",
+        "createdAt": "2026-09-15T01:05:00.000Z",
+        "updatedAt": "2026-09-18T07:40:00.000Z",
+        "completedAt": "2026-09-18T07:40:00.000Z",
+        "nextStep": "整理结构化日志示例",
+        "focusSessionIds": ["demo-focus-02"]
+      }
+    ],
+    "personalNotes": [
+      {
+        "id": "demo-note-boundary",
+        "title": "演示数据说明",
+        "content": "本备份中的任务、训练、专注与笔记全部为合成数据。录屏时不要混入真实用户数据、凭据或本机路径。",
+        "createdAt": "2026-09-16T01:10:00.000Z",
+        "updatedAt": "2026-09-20T01:10:00.000Z"
+      }
+    ],
+    "agentPlans": [
+      {
+        "id": "demo-action-save-plan-001",
+        "threadId": "demo-thread-portfolio-001",
+        "runId": "demo-run-portfolio-001",
+        "createdAt": "2026-09-19T09:00:00.000Z",
+        "baseStateRevision": "demo-state-revision-0000000000000001",
+        "title": "合成演示：求职材料收口计划",
+        "summary": "先验证证据和隐私边界，再录制短演示。",
+        "items": [
+          {
+            "title": "验证公开材料",
+            "firstStep": "运行 npm run portfolio:check",
+            "completionCriteria": "必需文件、链接、合成标记和架构图图源全部通过",
+            "estimatedMinutes": 25,
+            "rationale": "先消除材料漂移和隐私泄露风险。",
+            "sourceActionSlipIds": ["demo-todo-portfolio"],
+            "evidenceRefs": []
+          },
+          {
+            "title": "录制审批闭环",
+            "firstStep": "按演示脚本完成一次修改后批准",
+            "completionCriteria": "画面覆盖快照、SSE、审批、写入确认与专注启动",
+            "estimatedMinutes": 30,
+            "rationale": "用一条完整链路代替功能清单。",
+            "sourceActionSlipIds": ["demo-todo-eval"],
+            "evidenceRefs": []
+          }
+        ],
+        "assumptions": ["全部使用合成演示数据", "真实模型调用必须显式授权"],
+        "evidenceRefs": []
+      }
+    ]
+  }
+}
