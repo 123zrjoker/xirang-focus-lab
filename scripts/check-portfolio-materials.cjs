@@ -28,6 +28,8 @@ const errors = []
 const onePagerPdf = path.join(projectRoot, 'output', 'pdf', 'xirang-0.8.0-project-one-pager.pdf')
 const demoWalkthrough = path.join(projectRoot, 'artifacts', '0.8.0-demo-import-walkthrough.json')
 const portfolioAcceptance = path.join(projectRoot, 'artifacts', 'evals', '0.8.0-portfolio-acceptance.md')
+const packageJson = path.join(projectRoot, 'package.json')
+const packageLock = path.join(projectRoot, 'package-lock.json')
 
 function fail(message) {
   errors.push(message)
@@ -42,6 +44,24 @@ function walk(directory) {
 
 function relative(filePath) {
   return path.relative(projectRoot, filePath).replaceAll('\\', '/')
+}
+
+try {
+  const manifest = JSON.parse(fs.readFileSync(packageJson, 'utf8'))
+  if (manifest.version !== '0.8.0') {
+    fail(`项目版本应为 0.8.0，当前为 ${manifest.version ?? '未设置'}`)
+  }
+} catch (error) {
+  fail(`package.json 无效：${error.message}`)
+}
+
+try {
+  const lockfile = JSON.parse(fs.readFileSync(packageLock, 'utf8'))
+  if (lockfile.version !== '0.8.0' || lockfile.packages?.['']?.version !== '0.8.0') {
+    fail('package-lock.json 与 0.8.0 项目版本不一致')
+  }
+} catch (error) {
+  fail(`package-lock.json 无效：${error.message}`)
 }
 
 for (const required of requiredFiles) {
@@ -60,6 +80,11 @@ if (!fs.existsSync(onePagerPdf)) {
 
 if (!fs.existsSync(portfolioAcceptance)) {
   fail('缺少 0.8.0 求职材料验收记录：artifacts/evals/0.8.0-portfolio-acceptance.md')
+} else {
+  const acceptance = fs.readFileSync(portfolioAcceptance, 'utf8')
+  if (!acceptance.includes('当前状态：本地冻结验收通过')) {
+    fail('0.8.0 求职材料验收记录尚未标记为本地冻结验收通过')
+  }
 }
 
 if (!fs.existsSync(demoWalkthrough)) {
