@@ -10,6 +10,7 @@
   "scripts": {
     "dev": "vite",
     "portfolio:check": "node scripts/check-portfolio-materials.cjs",
+    "portfolio:verify-demo": "electron scripts/verify-portfolio-demo-import.cjs",
     "portfolio:render-diagrams": "node scripts/render-portfolio-diagrams.cjs",
     "setup:api:py311": "py -3.11 -m venv .venv311 && .venv311\\Scripts\\python.exe -m pip install -r server\\requirements-dev.txt",
     "setup:quality": "py -3.11 -m venv .venv-quality && .venv-quality\\Scripts\\python.exe -m pip install -r server\\requirements-quality.txt",

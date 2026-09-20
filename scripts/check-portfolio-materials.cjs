@@ -13,6 +13,8 @@ const requiredFiles = [
   'demo-script.md',
   'evidence-map.md',
   'resume-copy.md',
+  'one-pager/content.json',
+  'one-pager/xirang-project-one-pager.html',
   'demo-data/README.md',
   'demo-data/xirang-demo-backup.json',
   'demo-data/focus-methods-demo.md',
@@ -23,6 +25,9 @@ const requiredFiles = [
 ]
 
 const errors = []
+const onePagerPdf = path.join(projectRoot, 'output', 'pdf', 'xirang-0.8.0-project-one-pager.pdf')
+const demoWalkthrough = path.join(projectRoot, 'artifacts', '0.8.0-demo-import-walkthrough.json')
+const portfolioAcceptance = path.join(projectRoot, 'artifacts', 'evals', '0.8.0-portfolio-acceptance.md')
 
 function fail(message) {
   errors.push(message)
@@ -42,6 +47,43 @@ function relative(filePath) {
 for (const required of requiredFiles) {
   const target = path.join(portfolioRoot, ...required.split('/'))
   if (!fs.existsSync(target)) fail(`缺少必需材料：docs/portfolio/${required}`)
+}
+
+if (!fs.existsSync(onePagerPdf)) {
+  fail('缺少最终一页式作品集 PDF：output/pdf/xirang-0.8.0-project-one-pager.pdf')
+} else {
+  const pdf = fs.readFileSync(onePagerPdf)
+  if (pdf.length < 100_000 || pdf.subarray(0, 5).toString('ascii') !== '%PDF-') {
+    fail('最终一页式作品集不是有效的已渲染 PDF')
+  }
+}
+
+if (!fs.existsSync(portfolioAcceptance)) {
+  fail('缺少 0.8.0 求职材料验收记录：artifacts/evals/0.8.0-portfolio-acceptance.md')
+}
+
+if (!fs.existsSync(demoWalkthrough)) {
+  fail('缺少全新数据空间导入结果：artifacts/0.8.0-demo-import-walkthrough.json')
+} else {
+  try {
+    const walkthrough = JSON.parse(fs.readFileSync(demoWalkthrough, 'utf8'))
+    if (walkthrough.status !== 'passed' || walkthrough.privacy?.status !== 'passed') {
+      fail('全新数据空间导入或隐私检查没有通过')
+    }
+    if (walkthrough.privacy?.findings?.length) {
+      fail('全新数据空间导入隐私检查仍有发现项')
+    }
+    if (walkthrough.backup?.schemaVersion !== 11 || walkthrough.knowledgeBase?.sources !== 2 || walkthrough.knowledgeBase?.permissions !== 2) {
+      fail('全新数据空间导入结果与 0.8.0 固定演示数据不一致')
+    }
+    for (const screenshot of walkthrough.screenshots ?? []) {
+      if (!fs.existsSync(path.join(projectRoot, ...screenshot.split('/')))) {
+        fail(`全新数据空间导入截图不存在：${screenshot}`)
+      }
+    }
+  } catch (error) {
+    fail(`全新数据空间导入结果无效：${error.message}`)
+  }
 }
 
 if (fs.existsSync(portfolioRoot)) {

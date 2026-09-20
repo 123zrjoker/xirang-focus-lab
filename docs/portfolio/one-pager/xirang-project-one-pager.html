@@ -1,0 +1,173 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>息壤｜本地优先的可审批 AI Agent 桌面应用</title>
+<meta name="author" content="息壤项目">
+<meta name="description" content="息壤 0.8.0 项目案例一页纸">
+<meta name="keywords" content="Electron,FastAPI,LangGraph,RAG,Agent Evaluation">
+<meta name="generator" content="Kami">
+<style>
+  @page { size: A4; margin: 14mm 17mm; background: #f5f4ed; }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  :root {
+    --parchment: #f5f4ed;
+    --ivory: #faf9f5;
+    --near-black: #141413;
+    --dark-warm: #3d3d3a;
+    --olive: #504e49;
+    --stone: #6b6a64;
+    --brand: #1b365d;
+    --border: #e8e6dc;
+    --tag-bg: #e4ecf5;
+    --serif: "TsangerJinKai02", "KaiTi", "STKaiti", "Microsoft YaHei", "Noto Serif CJK SC", Georgia, serif;
+  }
+  html, body { background: var(--parchment); }
+  @media screen { body { max-width: 210mm; margin: 0 auto; padding: 14mm 17mm; } }
+  body {
+    color: var(--near-black);
+    font-family: var(--serif);
+    font-size: 9.5pt;
+    line-height: 1.42;
+    letter-spacing: 0.2pt;
+  }
+  .header {
+    margin-bottom: 10pt;
+    padding-bottom: 9pt;
+    border-bottom: 0.5pt solid var(--border);
+    display: flex;
+    align-items: flex-end;
+    justify-content: space-between;
+    gap: 18pt;
+  }
+  .title-block { flex: 1; }
+  .eyebrow {
+    margin-bottom: 5pt;
+    color: var(--brand);
+    font-size: 8.5pt;
+    font-weight: 500;
+    letter-spacing: 1.3pt;
+    text-transform: uppercase;
+  }
+  h1 {
+    margin-bottom: 4pt;
+    color: var(--near-black);
+    font-size: 22pt;
+    font-weight: 500;
+    line-height: 1.12;
+  }
+  .subtitle { max-width: 118mm; color: var(--olive); font-size: 10pt; line-height: 1.4; }
+  .meta { color: var(--stone); font-size: 8.5pt; line-height: 1.5; text-align: right; white-space: nowrap; }
+  .metrics {
+    display: flex;
+    gap: 10pt;
+    margin-bottom: 10pt;
+    padding: 2pt 0 7pt;
+    border-bottom: 0.3pt dotted var(--border);
+  }
+  .metric { flex: 1; display: flex; align-items: baseline; gap: 4pt; min-width: 0; }
+  .metric-value {
+    color: var(--brand);
+    font-size: 17pt;
+    font-weight: 500;
+    line-height: 1;
+    white-space: nowrap;
+    font-variant-numeric: lining-nums tabular-nums;
+  }
+  .metric-label { color: var(--olive); font-size: 7.4pt; line-height: 1.2; }
+  .lead { margin-bottom: 9pt; color: var(--dark-warm); font-size: 10.5pt; line-height: 1.5; }
+  .hl { color: var(--brand); font-weight: 500; }
+  .product-shot { margin-bottom: 10pt; break-inside: avoid; }
+  .product-shot .frame {
+    height: 80mm;
+    overflow: hidden;
+    border: 0;
+    border-radius: 5pt;
+    background: var(--ivory);
+    box-shadow: 0 1.5pt 6pt rgba(20, 20, 19, 0.14);
+  }
+  .product-shot img { width: 100%; height: 100%; display: block; object-fit: cover; object-position: center 28%; }
+  .product-shot figcaption { margin-top: 4pt; color: var(--stone); font-size: 7.5pt; line-height: 1.35; text-align: center; }
+  .two-col { display: grid; grid-template-columns: 1fr 1fr; gap: 16pt; }
+  section { margin-bottom: 9pt; break-inside: avoid; }
+  h2 { margin-bottom: 4pt; color: var(--near-black); font-size: 13.5pt; font-weight: 500; }
+  p { margin-bottom: 4pt; }
+  ul.dash { margin: 0; padding-left: 14pt; }
+  ul.dash li { margin-bottom: 3pt; line-height: 1.38; }
+  ul.dash li::marker { color: var(--brand); }
+  .callout {
+    margin-top: 2pt;
+    padding: 7pt 10pt;
+    border-radius: 3pt;
+    background: var(--ivory);
+    color: var(--olive);
+    font-size: 8.8pt;
+    line-height: 1.4;
+    break-inside: avoid;
+  }
+  .footer {
+    margin-top: 8pt;
+    padding-top: 5pt;
+    border-top: 0.3pt dotted var(--border);
+    display: flex;
+    justify-content: space-between;
+    color: var(--stone);
+    font-size: 7.8pt;
+  }
+</style>
+</head>
+<body>
+<div class="header">
+  <div class="title-block">
+    <div class="eyebrow">PROJECT CASE · 0.8.0</div>
+    <h1>本地优先的可审批 AI Agent 桌面应用</h1>
+    <div class="subtitle">息壤项目案例｜把最小数据、可恢复审批与本机工程门禁连成一条可复现链路</div>
+  </div>
+  <div class="meta">项目案例<br>2026.09.20<br>公开材料</div>
+</div>
+
+<div class="metrics">
+  <div class="metric"><div class="metric-value">15/15</div><div class="metric-label">固定 Fake 评测</div></div>
+  <div class="metric"><div class="metric-value">5/5</div><div class="metric-label">真实 DeepSeek 保留集</div></div>
+  <div class="metric"><div class="metric-value">0.7933</div><div class="metric-label">检索 Recall@5 分数</div></div>
+  <div class="metric"><div class="metric-value">29.109 ms</div><div class="metric-label">流式 SSE P95 时延</div></div>
+</div>
+
+<p class="lead">
+  息壤把注意力训练、现实专注、个人知识检索与 AI 周计划放进同一款 Windows 应用。核心判断是<span class="hl">业务数据仍由前端拥有</span>，用户先预览最小快照，Agent 审批前只读，批准后只返回可核验、可重放的写入意图。
+</p>
+
+<figure class="product-shot">
+  <div class="frame"><img src="../../../artifacts/0.5.1-agent-approval-desktop.png" alt="Agent 人工审批与只读工具轨迹界面"></div>
+  <figcaption>计划草案、只读工具轨迹和修改入口在写入前同屏可见，批准后才生成 Mutation Intent。</figcaption>
+</figure>
+
+<div class="two-col">
+  <section>
+    <h2>把模型波动隔离在写入边界外</h2>
+    <ul class="dash">
+      <li>SQLite Checkpoint 支持 Interrupt/Resume，三种审批均进入持久状态。</li>
+      <li><span class="hl">baseStateRevision</span> 阻止过期计划写入。</li>
+      <li>确定性 actionId 与 ACK 阻止网络重试产生重复副作用。</li>
+    </ul>
+  </section>
+  <section>
+    <h2>用冻结证据证明工程约束</h2>
+    <ul class="dash">
+      <li>BM25、BGE、RRF 与 Cross-Encoder 在本机执行。</li>
+      <li>云端只接收用户主动发送的最小证据或行动快照。</li>
+      <li>Windows CI 覆盖测试、Fake Eval、性能、安全审计与 SBOM。</li>
+    </ul>
+  </section>
+</div>
+
+<div class="callout">
+  <span class="hl">证据边界：</span>所有分数都来自固定合成数据集或冻结 Windows 环境，不代表真实用户效果，也不等于开放域安全保证。架构、失败案例、报告与无 Key 复现命令见 <strong>docs/portfolio/README.md</strong>。
+</div>
+
+<div class="footer">
+  <span>息壤项目 · 本地优先桌面 Agent</span>
+  <span>证据口径截至 2026.09.20</span>
+</div>
+</body>
+</html>

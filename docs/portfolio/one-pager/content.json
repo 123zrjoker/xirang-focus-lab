@@ -1,0 +1,56 @@
+{
+  "type": "one-pager",
+  "lang": "cn",
+  "brief": {
+    "audience": "招聘方与技术面试官",
+    "job": "在 30 秒内说明息壤项目的问题、关键工程判断、可核验结果与证据边界",
+    "template": "one-pager",
+    "formats": ["html", "pdf"],
+    "page_target": 1,
+    "length_target": "中文 400–600 字，A4 单页",
+    "narrative": "先用四项冻结指标建立可信度，再说明前端拥有写入、Agent 只返回幂等意图的核心判断，最后给出可复现入口和明确限制。",
+    "required_facts": [
+      "Fake Agent Eval 15/15",
+      "DeepSeek 保留集 5/5",
+      "混合检索 Recall@5 0.7933",
+      "Agent SSE 首事件 P95 29.109 ms",
+      "前端拥有业务写入，后端只返回 Mutation Intent"
+    ],
+    "required_assets": [
+      "../../../artifacts/0.5.1-agent-approval-desktop.png"
+    ],
+    "acceptance_checks": [
+      "PDF 恰好 1 页",
+      "所有数字能回链到 evidence-map.md",
+      "不含个人数据、凭据和本机绝对路径",
+      "不把合成评测外推为真实用户效果",
+      "逐页渲染检查无裁切、溢出、重叠或占位符"
+    ],
+    "evidence": [
+      "../evidence-map.md",
+      "../architecture.md",
+      "../decisions-and-failures.md"
+    ]
+  },
+  "content": {
+    "title": "本地优先的可审批 AI Agent 桌面应用",
+    "subtitle": "息壤项目案例｜把最小数据、可恢复审批与本机工程门禁连成一条可复现链路",
+    "metrics": [
+      { "value": "15/15", "label": "固定 Fake 评测" },
+      { "value": "5/5", "label": "真实 DeepSeek 保留集" },
+      { "value": "0.7933", "label": "检索 Recall@5 分数" },
+      { "value": "29.109 ms", "label": "流式 SSE P95 时延" }
+    ],
+    "argument": [
+      "息壤把注意力训练、现实专注、个人知识检索与 AI 周计划放进同一款 Windows 应用。核心不是让模型直接写数据，而是让用户先预览最小快照，Agent 审批前只读，批准后只返回可核验、可重放的写入意图。"
+    ],
+    "evidence": [
+      "SQLite Checkpoint 支持 Interrupt/Resume，三种审批均进入持久状态。",
+      "baseStateRevision 阻止过期计划写入。",
+      "确定性 actionId 与 ACK 阻止网络重试产生重复副作用。",
+      "BM25、BGE、RRF 与 Cross-Encoder 在本机执行。",
+      "Windows CI 覆盖测试、Fake Eval、性能、安全审计与 SBOM。"
+    ],
+    "next_step": "架构、失败案例、报告与无 Key 复现命令见 docs/portfolio/README.md。"
+  }
+}

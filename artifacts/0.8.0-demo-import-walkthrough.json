@@ -1,0 +1,41 @@
+{
+  "checkedAt": "2026-09-20T08:21:03.211Z",
+  "previewBase": "http://127.0.0.1:5173/",
+  "dataSpace": {
+    "kind": "ephemeral-electron-partition",
+    "partition": "qa-portfolio-demo-1789892457651"
+  },
+  "backup": {
+    "file": "docs/portfolio/demo-data/xirang-demo-backup.json",
+    "schemaVersion": 11,
+    "sessions": 3,
+    "focusSessions": 3,
+    "dailyPlans": 1,
+    "actionSlips": 3,
+    "personalNotes": 1,
+    "agentPlans": 1
+  },
+  "knowledgeBase": {
+    "file": "docs/portfolio/demo-data/focus-methods-demo.md",
+    "databaseVersion": 2,
+    "sources": 2,
+    "permissions": 2,
+    "chunks": 5
+  },
+  "privacy": {
+    "status": "passed",
+    "checks": [
+      "Windows 用户目录",
+      "Windows 绝对路径",
+      "API Key",
+      "电子邮箱",
+      "中国大陆手机号"
+    ],
+    "findings": []
+  },
+  "screenshots": [
+    "artifacts/0.8.0-demo-import-data.png",
+    "artifacts/0.8.0-demo-import-knowledge.png"
+  ],
+  "status": "passed"
+}
