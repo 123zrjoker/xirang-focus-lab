@@ -1,5 +1,6 @@
 const { app, BrowserWindow } = require('electron')
 const path = require('node:path')
+const { version } = require('../package.json')
 
 const previewBase = process.argv[2] || null
 const distIndex = path.resolve(__dirname, '..', 'dist', 'index.html')
@@ -58,7 +59,7 @@ app.whenReady().then(async () => {
     show: false,
     width: 1_280,
     height: 900,
-    webPreferences: { partition: `qa-0.9-accessibility-${Date.now()}` },
+    webPreferences: { partition: `qa-release-accessibility-${Date.now()}` },
   })
   window.webContents.on('console-message', (event) => {
     if (event.level === 'error') console.error(`渲染进程：${event.message}`)
@@ -143,12 +144,12 @@ app.whenReady().then(async () => {
       throw new Error('未来版本数据没有保持只读或提示不完整。')
     }
 
-    console.log('0.9.0 accessibility and compatibility smoke passed.')
+    console.log(`${version} accessibility and compatibility smoke passed.`)
   } finally {
     window.destroy()
     app.quit()
   }
 }).catch((error) => {
-  console.error(`0.9.0 accessibility smoke failed at “${currentStep}”:`, error)
+  console.error(`${version} accessibility smoke failed at “${currentStep}”:`, error)
   app.exit(1)
 })

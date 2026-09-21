@@ -19,8 +19,9 @@ function extract(text, expression, label) {
   return match[1]
 }
 
-const manifest = readJson('docs', 'contracts', '0.9.0-runtime-contract.json')
 const packageJson = readJson('package.json')
+const manifestFileName = `${packageJson.version}-runtime-contract.json`
+const manifest = readJson('docs', 'contracts', manifestFileName)
 const packageLock = readJson('package-lock.json')
 const serverInit = readText('server', '__init__.py')
 const serverContracts = readText('server', 'agent', 'contracts.py')
@@ -74,7 +75,7 @@ const browserApiContractVersion = extract(
   '前端 API 契约版本',
 )
 
-if (manifest.targetRelease !== '0.9.0') fail('契约清单 targetRelease 必须为 0.9.0')
+if (manifest.targetRelease !== packageJson.version) fail('契约清单 targetRelease 必须与 package.json 版本一致')
 if (manifest.productVersion?.current !== packageJson.version) fail('契约清单与 package.json 版本不一致')
 if (packageLock.version !== packageJson.version || packageLock.packages?.['']?.version !== packageJson.version) {
   fail('package-lock.json 与 package.json 版本不一致')

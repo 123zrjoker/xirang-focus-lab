@@ -1,6 +1,8 @@
 param(
-  [string]$BaselineSetupPath = 'release-candidate\0.8.0\Xirang-Setup-0.8.0-x64.exe',
-  [string]$CandidateSetupPath = 'release-candidate\0.9.0\Xirang-Setup-0.9.0-x64.exe'
+  [string]$BaselineSetupPath = 'release-candidate\0.9.0\Xirang-Setup-0.9.0-x64.exe',
+  [string]$CandidateSetupPath = 'release-candidate\1.0.0\Xirang-Setup-1.0.0-x64.exe',
+  [string]$BaselineVersion = '0.9.0',
+  [string]$CandidateVersion = '1.0.0'
 )
 
 $ErrorActionPreference = 'Stop'
@@ -169,11 +171,11 @@ try {
   $baselineInstallExit = Install-Version $baselineSetup
   $installed = $true
   $baselineApp = Find-InstalledApp
-  $baselineLaunch = Start-SmokeApp $baselineApp '0.8.0'
+  $baselineLaunch = Start-SmokeApp $baselineApp $BaselineVersion
 
   $baselineAgent = Invoke-JsonApi "$($baselineLaunch.BaseUrl)/api/agent/threads/$threadId"
   if ($baselineAgent.runId -ne $fixture.runId -or $baselineAgent.status -ne $fixture.status) {
-    throw '0.8.0 could not recover the seeded Agent checkpoint.'
+    throw "$BaselineVersion could not recover the seeded Agent checkpoint."
   }
 
   $credentialRequest = @{
@@ -183,7 +185,7 @@ try {
   }
   $credential = Invoke-JsonApi @credentialRequest
   if (-not $credential.configured -or $credential.credentialSource -ne 'windows_dpapi_current_user') {
-    throw '0.8.0 did not persist the smoke credential with Windows DPAPI.'
+    throw "$BaselineVersion did not persist the smoke credential with Windows DPAPI."
   }
 
   $chunks = @(@{
@@ -199,10 +201,10 @@ try {
   })
   $baselineIndex = Invoke-JsonApi "$($baselineLaunch.BaseUrl)/api/index/sync" -Method Post -Body @{ chunks = $chunks } -TimeoutSec 120
   if (-not $baselineIndex.fingerprint -or $baselineIndex.chunkCount -ne 1) {
-    throw '0.8.0 did not build the upgrade smoke vector index.'
+    throw "$BaselineVersion did not build the upgrade smoke vector index."
   }
 
-  $baselineSidecarStopped = Complete-SmokeApp $baselineLaunch '0.8.0'
+  $baselineSidecarStopped = Complete-SmokeApp $baselineLaunch $BaselineVersion
   [System.IO.File]::WriteAllText($rendererMarkerPath, 'xirang-upgrade-smoke-renderer-marker')
 
   $credentialPath = Join-Path $runtimeRoot 'credentials\deepseek.json'
@@ -217,7 +219,7 @@ try {
 
   $candidateInstallExit = Install-Version $candidateSetup
   $candidateApp = Find-InstalledApp
-  $candidateLaunch = Start-SmokeApp $candidateApp '0.9.0'
+  $candidateLaunch = Start-SmokeApp $candidateApp $CandidateVersion
 
   $candidateCredential = Invoke-JsonApi "$($candidateLaunch.BaseUrl)/api/settings/ai-provider/deepseek/credential"
   $candidateIndex = Invoke-JsonApi "$($candidateLaunch.BaseUrl)/api/index/status"
@@ -240,7 +242,7 @@ try {
   if (-not $checkpointPreserved) { throw 'Agent checkpoint was not preserved across the upgrade.' }
   if (-not $rendererDataPreserved) { throw 'Renderer user-data marker was not preserved across the upgrade.' }
 
-  $candidateSidecarStopped = Complete-SmokeApp $candidateLaunch '0.9.0'
+  $candidateSidecarStopped = Complete-SmokeApp $candidateLaunch $CandidateVersion
 
   $uninstaller = Get-ChildItem -LiteralPath $installRoot -Filter '*.exe' -File |
     Where-Object { $_.Name -match '^(Uninstall|unins)' } |
