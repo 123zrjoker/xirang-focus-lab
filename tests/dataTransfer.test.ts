@@ -1,6 +1,6 @@
 import { readFileSync } from 'node:fs'
 import { describe, expect, it } from 'vitest'
-import { createBackupText, createCsvText, parseBackupData, parseBackupText } from '../src/lib/dataTransfer'
+import { BACKUP_FORMAT_VERSION, createBackupText, createCsvText, parseBackupData, parseBackupText } from '../src/lib/dataTransfer'
 import { createDefaultState } from '../src/lib/storage'
 
 describe('v11 data transfer', () => {
@@ -20,11 +20,32 @@ describe('v11 data transfer', () => {
       createdAt: '2026-09-03T01:00:00.000Z', updatedAt: '2026-09-03T01:10:00.000Z',
     })
 
-    const restored = parseBackupText(createBackupText(state))
+    const backupText = createBackupText(state)
+    expect(JSON.parse(backupText).backupVersion).toBe(BACKUP_FORMAT_VERSION)
+    const restored = parseBackupText(backupText)
     expect(restored.focusLaunches[0].firstAction).toBe('打开文档')
     expect(restored.focusLaunches[0].focusSessionId).toBe('focus-1')
     expect(restored.actionSlips[0].nextStep).toBe('检查第一段')
     expect(restored.personalNotes[0].content).toBe('先完成最小的一步。')
+  })
+
+  it('accepts the previous backup envelope and rejects foreign or future formats', () => {
+    const state = createDefaultState()
+    const previous = JSON.stringify({
+      product: 'xirang', backupVersion: 1, schemaVersion: state.schemaVersion, state,
+    })
+    expect(parseBackupData(previous).state.schemaVersion).toBe(state.schemaVersion)
+
+    expect(() => parseBackupData(JSON.stringify({
+      product: 'other-product', backupVersion: 2, schemaVersion: state.schemaVersion, state,
+    }))).toThrow('不是息壤生成')
+    expect(() => parseBackupData(JSON.stringify({
+      product: 'xirang', backupVersion: BACKUP_FORMAT_VERSION + 1, schemaVersion: state.schemaVersion, state,
+    }))).toThrow('来自更新版本')
+    expect(() => parseBackupData(JSON.stringify({
+      product: 'xirang', backupVersion: 2, schemaVersion: state.schemaVersion + 1,
+      state: { ...state, schemaVersion: state.schemaVersion + 1 },
+    }))).toThrow('来自更新版本')
   })
 
   it('includes launch context columns and rows in CSV', () => {

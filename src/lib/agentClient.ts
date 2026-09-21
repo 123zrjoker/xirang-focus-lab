@@ -1,5 +1,5 @@
 import type { ActionContextSnapshot } from './agentContext'
-import { apiUrl } from './apiUrl'
+import { apiUrl, desktopBridge } from './apiUrl'
 
 export interface AgentFoundationStatus {
   graphVersion: string
@@ -122,18 +122,25 @@ async function responseError(response: Response) {
   }
 }
 
+function connectionError() {
+  return new Error(desktopBridge()
+    ? '无法连接桌面本机 Agent 服务，请在设置页查看运行状态并尝试重启。'
+    : '无法连接本地 Agent 服务，请先运行 npm.cmd run dev:api。')
+}
+
 async function requestJson<T>(url: string, options?: RequestInit, timeoutMs = 130_000): Promise<T> {
   const controller = new AbortController()
   const timeout = globalThis.setTimeout(() => controller.abort(), timeoutMs)
   try {
-    const response = await fetch(apiUrl(url), { ...options, signal: controller.signal })
+    let response: Response
+    try {
+      response = await fetch(apiUrl(url), { ...options, signal: controller.signal })
+    } catch {
+      if (controller.signal.aborted) throw new Error('本地 Agent 规划超时，请稍后重试。')
+      throw connectionError()
+    }
     if (!response.ok) throw new Error(await responseError(response))
     return await response.json() as T
-  } catch (error) {
-    if (error instanceof DOMException && error.name === 'AbortError') {
-      throw new Error('本地 Agent 规划超时，请稍后重试。')
-    }
-    throw error
   } finally {
     globalThis.clearTimeout(timeout)
   }
@@ -194,12 +201,18 @@ async function streamAgentRequest(
   const abortFromExternal = () => controller.abort('cancelled')
   externalSignal?.addEventListener('abort', abortFromExternal, { once: true })
   try {
-    const response = await fetch(apiUrl(url), {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', Accept: 'text/event-stream' },
-      body: JSON.stringify(body),
-      signal: controller.signal,
-    })
+    let response: Response
+    try {
+      response = await fetch(apiUrl(url), {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Accept: 'text/event-stream' },
+        body: JSON.stringify(body),
+        signal: controller.signal,
+      })
+    } catch (error) {
+      if (controller.signal.aborted) throw error
+      throw connectionError()
+    }
     if (!response.ok) throw new Error(await responseError(response))
     if (!response.body) throw new Error('本地 Agent 服务没有返回可读取的进度流。')
     const reader = response.body.getReader()

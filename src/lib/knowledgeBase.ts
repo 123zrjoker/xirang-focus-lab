@@ -98,6 +98,7 @@ export const KNOWLEDGE_CHUNK_STORE = 'chunks'
 export const KNOWLEDGE_RETRIEVAL_STORE = 'retrievals'
 export const KNOWLEDGE_METADATA_STORE = 'metadata'
 export const KNOWLEDGE_DB_VERSION = 2
+export const MIN_SUPPORTED_KNOWLEDGE_BACKUP_VERSION = 1
 export const MAX_KNOWLEDGE_FILE_BYTES = 2 * 1024 * 1024
 export const MAX_KNOWLEDGE_DOCUMENT_BYTES = 10 * 1024 * 1024
 export const MAX_KNOWLEDGE_EXTRACTED_BYTES = 4 * 1024 * 1024
@@ -560,10 +561,12 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value)
 }
 
-function validateBackupCollections(value: unknown): KnowledgeBaseBackup {
+export function validateKnowledgeBaseBackup(value: unknown): KnowledgeBaseBackup {
   if (!isRecord(value)) throw new Error('知识库备份内容不完整。')
   const schemaVersion = Number(value.schemaVersion)
-  if (!Number.isInteger(schemaVersion) || schemaVersion < 1 || schemaVersion > KNOWLEDGE_DB_VERSION) {
+  if (!Number.isInteger(schemaVersion)
+    || schemaVersion < MIN_SUPPORTED_KNOWLEDGE_BACKUP_VERSION
+    || schemaVersion > KNOWLEDGE_DB_VERSION) {
     throw new Error('知识库备份版本不受当前应用支持。')
   }
   const collectionNames = ['sources', 'permissions', 'chunks', 'retrievals', 'metadata'] as const
@@ -603,11 +606,23 @@ function validateBackupCollections(value: unknown): KnowledgeBaseBackup {
     }
     sourceIds.add(source.id)
   }
-  if (permissions.some((permission) => typeof permission.sourceId !== 'string' || !sourceIds.has(permission.sourceId))) {
+  const permissionSourceIds = new Set<string>()
+  if (permissions.some((permission) => {
+    if (typeof permission.sourceId !== 'string' || !sourceIds.has(permission.sourceId)
+      || permissionSourceIds.has(permission.sourceId)) return true
+    permissionSourceIds.add(permission.sourceId)
+    return false
+  })) {
     throw new Error('知识库授权记录引用了不存在的来源。')
   }
-  if (chunks.some((chunk) => typeof chunk.id !== 'string' || !chunk.id
-    || typeof chunk.sourceId !== 'string' || !sourceIds.has(chunk.sourceId) || typeof chunk.content !== 'string')) {
+  const chunkIds = new Set<string>()
+  if (chunks.some((chunk) => {
+    if (typeof chunk.id !== 'string' || !chunk.id || chunkIds.has(chunk.id)
+      || typeof chunk.sourceId !== 'string' || !sourceIds.has(chunk.sourceId)
+      || typeof chunk.content !== 'string') return true
+    chunkIds.add(chunk.id)
+    return false
+  })) {
     throw new Error('知识文本块引用了不存在的来源。')
   }
   return { schemaVersion, sources, permissions, chunks, retrievals, metadata }
@@ -647,7 +662,7 @@ export async function exportKnowledgeBase(): Promise<KnowledgeBaseBackup> {
 }
 
 export async function restoreKnowledgeBase(value: unknown) {
-  const backup = validateBackupCollections(value)
+  const backup = validateKnowledgeBaseBackup(value)
   const sources = await Promise.all(backup.sources.map(sourceWithIntegrity))
   const sourceIds = new Set(sources.map((source) => source.id))
   const permissionsBySource = new Map(backup.permissions.map((permission) => [permission.sourceId, permission]))

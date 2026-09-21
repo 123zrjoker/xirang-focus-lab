@@ -36,12 +36,40 @@ afterEach(() => {
 describe('knowledge retrieval client', () => {
   it('checks the stateless local service health contract', async () => {
     const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify({
-      status: 'ok', version: '0.4.0', retrievalEngine: 'bm25-zh-v1', storesData: false,
+      status: 'ok', version: '0.8.0', apiContractVersion: '1', retrievalEngine: 'bm25-zh-v1', storesData: false,
     }), { status: 200, headers: { 'Content-Type': 'application/json' } }))
     vi.stubGlobal('fetch', fetchMock)
 
-    await expect(checkRetrievalService()).resolves.toMatchObject({ retrievalEngine: 'bm25-zh-v1', storesData: false })
+    await expect(checkRetrievalService()).resolves.toMatchObject({
+      version: '0.8.0', apiContractVersion: '1', retrievalEngine: 'bm25-zh-v1', storesData: false,
+    })
     expect(fetchMock).toHaveBeenCalledWith('/api/health', expect.objectContaining({ signal: expect.any(AbortSignal) }))
+  })
+
+  it('rejects a health response without an API contract version', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response(JSON.stringify({
+      status: 'ok', version: '0.8.0', retrievalEngine: 'bm25-zh-v1', storesData: false,
+    }), { status: 200, headers: { 'Content-Type': 'application/json' } })))
+
+    await expect(checkRetrievalService()).rejects.toThrow('检索服务状态信息不完整')
+  })
+
+  it('rejects an incompatible API contract instead of using it silently', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response(JSON.stringify({
+      status: 'ok', version: '0.9.0', apiContractVersion: '2', retrievalEngine: 'future-engine', storesData: false,
+    }), { status: 200, headers: { 'Content-Type': 'application/json' } })))
+
+    await expect(checkRetrievalService()).rejects.toThrow('当前应用需要 1，服务返回 2')
+  })
+
+  it('gives a desktop recovery action when the service is unreachable', async () => {
+    vi.stubGlobal('window', {
+      location: { protocol: 'file:' },
+      xirangDesktop: { apiBaseUrl: 'http://127.0.0.1:43123' },
+    })
+    vi.stubGlobal('fetch', vi.fn().mockRejectedValue(new TypeError('fetch failed')))
+
+    await expect(checkRetrievalService()).rejects.toThrow('请在设置页查看运行状态并尝试重启')
   })
 
   it('sends only retrieval fields and accepts explainable results', async () => {

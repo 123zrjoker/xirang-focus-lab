@@ -1,9 +1,10 @@
 import type { KnowledgeChunk } from './knowledgeBase'
-import { apiUrl, desktopBridge } from './apiUrl'
+import { apiUrl, desktopBridge, SUPPORTED_API_CONTRACT_VERSION } from './apiUrl'
 
 export interface RetrievalHealth {
   status: 'ok'
   version: string
+  apiContractVersion: string
   retrievalEngine: string
   storesData: boolean
   semanticEngine?: string
@@ -229,7 +230,14 @@ export async function checkRetrievalService(): Promise<RetrievalHealth> {
   const response = await request('/api/health', undefined, 3_000)
   if (!response.ok) throw new Error(await responseError(response))
   const payload = await response.json() as RetrievalHealth
-  if (payload.status !== 'ok' || !payload.retrievalEngine) throw new Error('检索服务状态信息不完整。')
+  if (payload.status !== 'ok' || !payload.retrievalEngine || !payload.apiContractVersion) {
+    throw new Error('检索服务状态信息不完整。')
+  }
+  if (payload.apiContractVersion !== SUPPORTED_API_CONTRACT_VERSION) {
+    throw new Error(
+      `检索服务契约不兼容：当前应用需要 ${SUPPORTED_API_CONTRACT_VERSION}，服务返回 ${payload.apiContractVersion}。`,
+    )
+  }
   return payload
 }
 

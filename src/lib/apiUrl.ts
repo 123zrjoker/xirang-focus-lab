@@ -1,5 +1,7 @@
 export type DesktopApiServiceState = 'stopped' | 'starting' | 'ready' | 'stopping' | 'failed'
 
+export const SUPPORTED_API_CONTRACT_VERSION = '1'
+
 export interface DesktopApiServiceStatus {
   state: DesktopApiServiceState
   baseUrl: string | null
@@ -8,6 +10,8 @@ export interface DesktopApiServiceStatus {
   launchKind: 'development-python' | 'packaged-sidecar' | 'override' | null
   startedAt: string | null
   readyAt: string | null
+  serviceVersion: string | null
+  apiContractVersion: string | null
   error: string | null
 }
 

@@ -75,6 +75,21 @@ describe('agent client', () => {
     await expect(runAgentPlan(context, 'thread-client')).rejects.toThrow('DeepSeek 尚未配置')
   })
 
+  it('gives a desktop recovery action when the Agent transport is offline', async () => {
+    vi.stubGlobal('window', {
+      location: { protocol: 'file:' },
+      xirangDesktop: { apiBaseUrl: 'http://127.0.0.1:43123' },
+    })
+    vi.stubGlobal('fetch', vi.fn().mockRejectedValue(new TypeError('fetch failed')))
+
+    await expect(runAgentPlan(context, 'thread-client')).rejects.toThrow(
+      '请在设置页查看运行状态并尝试重启',
+    )
+    await expect(streamAgentPlan(context, 'thread-client', () => undefined)).rejects.toThrow(
+      '请在设置页查看运行状态并尝试重启',
+    )
+  })
+
   it('parses progress and the approval interrupt result from an SSE stream', async () => {
     const result = {
       schemaVersion: 1, graphVersion: '0.5.1-stateful-v1', threadId: 'thread-stream', runId: 'run-stream',

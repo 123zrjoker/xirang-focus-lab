@@ -57,13 +57,15 @@ export function DesktopServicePanel() {
       <div className="settings-card-heading">
         <span>03</span>
         <div><p className="eyebrow">桌面运行时</p><h2>本机 AI 服务</h2></div>
-        <strong className={`desktop-service-state ${state}`}>{stateLabels[state]}</strong>
+        <strong className={`desktop-service-state ${state}`} aria-live="polite">{stateLabels[state]}</strong>
       </div>
       <p className="desktop-service-description">
         桌面版会自动启动并关闭 FastAPI 服务。页面只通过随机分配的本机回环端口连接，不开放局域网访问。
       </p>
       <div className="desktop-service-details">
         <span><small>运行方式</small><strong>{status?.launchKind ? launchLabels[status.launchKind] : '正在准备'}</strong></span>
+        <span><small>服务版本</small><strong>{status?.serviceVersion ?? '—'}</strong></span>
+        <span><small>API 契约</small><strong>{status?.apiContractVersion ?? '—'}</strong></span>
         <span><small>本机端口</small><strong>{status?.port ?? '—'}</strong></span>
         <span><small>进程</small><strong>{status?.pid ?? '—'}</strong></span>
       </div>

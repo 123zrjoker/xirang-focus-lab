@@ -29,6 +29,9 @@ button:disabled { cursor: not-allowed; }
 p, h1, h2, h3 { margin-top: 0; }
 
 .page-width { width: min(1160px, calc(100% - 48px)); margin-inline: auto; }
+.storage-compatibility-alert { width: min(1160px, calc(100% - 48px)); margin: 24px auto 0; padding: 15px 18px; border: 1px solid #efc6be; border-radius: 14px; background: #fff8f6; color: #7f3025; }
+.storage-compatibility-alert strong { display: block; margin-bottom: 4px; font-size: 13px; }
+.storage-compatibility-alert p { margin: 0; color: #85564f; font-size: 11px; line-height: 1.6; }
 .inner-page { padding-block: 76px 110px; }
 .app-shell main { min-height: calc(100vh - 82px); }
 .eyebrow { margin: 0 0 14px; color: var(--green-2); font-size: 12px; line-height: 1; font-weight: 800; letter-spacing: .18em; text-transform: uppercase; }
@@ -2204,7 +2207,7 @@ html.motion-off *, html.motion-off *::before, html.motion-off *::after {
 
 .desktop-service-details {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
   gap: 9px;
 }
 

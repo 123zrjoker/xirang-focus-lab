@@ -10,7 +10,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, ConfigDict, Field, SecretStr
 
-from . import __version__
+from . import API_CONTRACT_VERSION, __version__
 from .credentials import CredentialStorageError, deepseek_credential_store
 from .retrieval import (
     ENGINE_NAME,
@@ -39,6 +39,7 @@ from .generation import (
 from .agent.checkpoints import build_sqlite_checkpointer, resolve_checkpoint_path
 from .agent.contracts import (
     AGENT_GRAPH_VERSION,
+    AGENT_SCHEMA_VERSION,
     ActionContextSnapshot,
     AgentRunResult,
     ApprovalDecision,
@@ -325,6 +326,7 @@ def health() -> dict:
     return {
         "status": "ok",
         "version": __version__,
+        "apiContractVersion": API_CONTRACT_VERSION,
         "retrievalEngine": ENGINE_NAME,
         "storesData": bool(index.get("ready")),
         "semanticEngine": VECTOR_ENGINE_NAME,
@@ -344,6 +346,11 @@ def diagnostics() -> dict:
     return {
         "status": "ok",
         "version": __version__,
+        "contracts": {
+            "apiVersion": API_CONTRACT_VERSION,
+            "agentSchemaVersion": AGENT_SCHEMA_VERSION,
+            "agentGraphVersion": AGENT_GRAPH_VERSION,
+        },
         "runtime": runtime_diagnostics(),
         "agent": {
             "graphVersion": AGENT_GRAPH_VERSION,

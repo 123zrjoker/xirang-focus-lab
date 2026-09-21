@@ -1,5 +1,6 @@
 from fastapi.testclient import TestClient
 
+from server import API_CONTRACT_VERSION, __version__
 from server.main import app
 from server.retrieval import RetrievalChunk, search_chunks, tokenize
 
@@ -80,8 +81,13 @@ def test_api_is_stateless_and_returns_camel_case_contract() -> None:
     })
 
     assert health.status_code == 200
+    assert health.json()["version"] == __version__
+    assert health.json()["apiContractVersion"] == API_CONTRACT_VERSION
     assert health.json()["storesData"] is False
     assert diagnostics.status_code == 200
+    assert diagnostics.json()["version"] == __version__
+    assert diagnostics.json()["contracts"]["apiVersion"] == API_CONTRACT_VERSION
+    assert diagnostics.json()["contracts"]["agentSchemaVersion"] == 1
     assert diagnostics.json()["agent"]["operationMode"] == "serialized"
     assert diagnostics.json()["runtime"]["pythonVersion"]
     assert diagnostics.json()["retrieval"]["cache"]["resultCache"]["capacity"] == 64

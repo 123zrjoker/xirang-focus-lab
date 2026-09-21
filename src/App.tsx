@@ -9,7 +9,7 @@ import { ProgressPage } from './pages/ProgressPage'
 import { SettingsPage } from './pages/SettingsPage'
 import { TodayPage } from './pages/TodayPage'
 import { TrainingPage } from './pages/TrainingPage'
-import { clearActiveFocus, clearActiveLaunch, clearStoredState, createDefaultState, loadActiveFocus, loadActiveLaunch, loadState, saveActiveFocus, saveActiveLaunch, saveState, toTrainingSession } from './lib/storage'
+import { clearActiveFocus, clearActiveLaunch, clearStoredState, createDefaultState, getStorageCompatibilityIssue, loadActiveFocus, loadActiveLaunch, loadState, resetStorageCompatibilityBlock, saveActiveFocus, saveActiveLaunch, saveState, toTrainingSession } from './lib/storage'
 import { playCompletionSound } from './lib/feedback'
 import { buildDailyPlan, getTodayPlan } from './lib/planner'
 import { evaluateAdaptiveDifficulty } from './lib/adaptiveDifficulty'
@@ -47,6 +47,7 @@ function pageFromHash(): Page {
 
 export default function App() {
   const [state, setState] = useState<AppState>(() => loadState())
+  const [storageCompatibilityIssue, setStorageCompatibilityIssue] = useState<string | null>(() => getStorageCompatibilityIssue())
   const [page, setPage] = useState<Page>(() => pageFromHash())
   const [selectedTask, setSelectedTask] = useState<TaskType | null>(null)
   const [selectedFocusMinutes, setSelectedFocusMinutes] = useState<number | null>(null)
@@ -276,12 +277,15 @@ export default function App() {
 
   async function clearAllData() {
     clearStoredState()
+    setStorageCompatibilityIssue(null)
     setActiveLaunch(null)
     setState(createDefaultState())
     await clearKnowledgeBase()
   }
 
   function replaceState(nextState: AppState) {
+    resetStorageCompatibilityBlock()
+    setStorageCompatibilityIssue(null)
     clearActiveFocus()
     clearActiveLaunch()
     setActiveLaunch(null)
@@ -496,5 +500,15 @@ export default function App() {
   )
   else content = <HomePage hasProfile={state.profile.onboardingComplete} onNavigate={navigate} onQuickTask={() => startTask('schulte')} />
 
-  return <AppShell page={page} onNavigate={navigate}>{content}</AppShell>
+  return (
+    <AppShell page={page} onNavigate={navigate}>
+      {storageCompatibilityIssue && (
+        <div className="storage-compatibility-alert" role="alert">
+          <strong>本机数据已进入只读保护</strong>
+          <p>{storageCompatibilityIssue} 原始数据未被覆盖；请升级应用，或在设置页明确清空数据、导入受支持的备份。</p>
+        </div>
+      )}
+      {content}
+    </AppShell>
+  )
 }

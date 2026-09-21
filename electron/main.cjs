@@ -1,6 +1,6 @@
 const path = require('node:path')
 const { app, BrowserWindow, Menu, ipcMain, shell } = require('electron')
-const { ApiServiceSupervisor } = require('./api-service.cjs')
+const { ApiServiceSupervisor, SUPPORTED_API_CONTRACT_VERSION } = require('./api-service.cjs')
 const { resolveRuntimePaths } = require('./runtime-paths.cjs')
 
 const APP_ID = 'com.focuslab.xirang'
@@ -94,7 +94,13 @@ app.whenReady().then(async () => {
     resourcesPath: process.resourcesPath,
     isPackaged: app.isPackaged,
   })
-  apiService = new ApiServiceSupervisor({ paths, appPath, isPackaged: app.isPackaged })
+  apiService = new ApiServiceSupervisor({
+    paths,
+    appPath,
+    isPackaged: app.isPackaged,
+    expectedVersion: app.getVersion(),
+    expectedApiContractVersion: SUPPORTED_API_CONTRACT_VERSION,
+  })
   apiService.on('status', sendServiceStatus)
   await apiService.prepare()
 

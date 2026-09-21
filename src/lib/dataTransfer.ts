@@ -2,9 +2,12 @@ import { CURRENT_SCHEMA_VERSION, migrateState } from './storage'
 import type { AppState } from '../types'
 import type { KnowledgeBaseBackup } from './knowledgeBase'
 
+export const BACKUP_FORMAT_VERSION = 2
+export const MIN_SUPPORTED_BACKUP_FORMAT_VERSION = 1
+
 interface XirangBackup {
   product: 'xirang'
-  backupVersion: 2
+  backupVersion: typeof BACKUP_FORMAT_VERSION
   schemaVersion: number
   exportedAt: string
   state: AppState
@@ -28,7 +31,7 @@ export function exportDateStamp(date = new Date()) {
 export function createBackupText(state: AppState, knowledgeBase?: KnowledgeBaseBackup) {
   const backup: XirangBackup = {
     product: 'xirang',
-    backupVersion: 2,
+    backupVersion: BACKUP_FORMAT_VERSION,
     schemaVersion: CURRENT_SCHEMA_VERSION,
     exportedAt: new Date().toISOString(),
     state: { ...state, schemaVersion: CURRENT_SCHEMA_VERSION },
@@ -46,6 +49,18 @@ export function parseBackupData(text: string): { state: AppState; knowledgeBase?
   }
 
   if (!isRecord(parsed)) throw new Error('备份内容不完整。')
+  if (parsed.product !== undefined && parsed.product !== 'xirang') {
+    throw new Error('这不是息壤生成的备份文件。')
+  }
+  if (parsed.backupVersion !== undefined) {
+    const backupVersion = Number(parsed.backupVersion)
+    if (!Number.isInteger(backupVersion) || backupVersion < MIN_SUPPORTED_BACKUP_FORMAT_VERSION) {
+      throw new Error('这份备份的格式版本不受支持。')
+    }
+    if (backupVersion > BACKUP_FORMAT_VERSION) {
+      throw new Error('这份备份来自更新版本的息壤，请先升级应用。')
+    }
+  }
   const source = isRecord(parsed.state) ? parsed.state : parsed
   const version = Number(parsed.schemaVersion ?? source.schemaVersion ?? 1)
   if (Number.isFinite(version) && version > CURRENT_SCHEMA_VERSION) {

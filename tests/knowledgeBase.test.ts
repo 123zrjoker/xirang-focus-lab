@@ -9,6 +9,7 @@ import {
   noteKnowledgeStatus,
   normalizeKnowledgeContent,
   sha256KnowledgeText,
+  validateKnowledgeBaseBackup,
   validateKnowledgeFile,
 } from '../src/lib/knowledgeBase'
 import type { PersonalNote } from '../src/types'
@@ -111,6 +112,49 @@ describe('knowledge base source management', () => {
     })
     expect(source.sizeBytes).toBeLessThan(source.originalSizeBytes!)
     vi.unstubAllGlobals()
+  })
+})
+
+describe('knowledge backup compatibility', () => {
+  const source: KnowledgeSource = {
+    id: 'source-backup', kind: 'text', title: '恢复测试', content: '可恢复正文',
+    contentFingerprint: 'fingerprint', sizeBytes: 12,
+    createdAt: '2026-09-21T00:00:00.000Z', updatedAt: '2026-09-21T00:00:00.000Z',
+  }
+  const permission = {
+    sourceId: source.id, sourceKind: source.kind,
+    grantedAt: '2026-09-21T00:00:00.000Z', updatedAt: '2026-09-21T00:00:00.000Z',
+  }
+  const chunk = {
+    id: 'chunk-backup', sourceId: source.id, sourceTitle: source.title, sourceContentHash: 'SOURCE',
+    sequence: 0, content: source.content, contentHash: 'CONTENT', heading: source.title,
+    startOffset: 0, endOffset: source.content.length, startLine: 1, endLine: 1,
+    characterCount: source.content.length, processorVersion: 1,
+    createdAt: '2026-09-21T00:00:00.000Z', updatedAt: '2026-09-21T00:00:00.000Z',
+  }
+  const validBackup = {
+    schemaVersion: 1,
+    sources: [source],
+    permissions: [permission],
+    chunks: [chunk],
+    retrievals: [],
+    metadata: [],
+  }
+
+  it('accepts a supported v1 knowledge backup before transactional restore', () => {
+    expect(validateKnowledgeBaseBackup(validBackup)).toMatchObject({ schemaVersion: 1 })
+  })
+
+  it('rejects future, dangling and duplicate records before restore', () => {
+    expect(() => validateKnowledgeBaseBackup({ ...validBackup, schemaVersion: 3 })).toThrow('版本不受当前应用支持')
+    expect(() => validateKnowledgeBaseBackup({
+      ...validBackup,
+      permissions: [{ ...permission, sourceId: 'missing-source' }],
+    })).toThrow('授权记录引用了不存在的来源')
+    expect(() => validateKnowledgeBaseBackup({
+      ...validBackup,
+      chunks: [chunk, { ...chunk }],
+    })).toThrow('文本块引用了不存在的来源')
   })
 })
 

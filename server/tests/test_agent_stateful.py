@@ -4,7 +4,11 @@ from copy import deepcopy
 
 import pytest
 
-from server.agent.checkpoints import build_sqlite_checkpointer
+from server.agent.checkpoints import (
+    IncompatibleCheckpointError,
+    build_sqlite_checkpointer,
+    normalize_checkpoint_state,
+)
 from server.agent.contracts import PlanDraft, PlanItem, PlannerDecision
 from server.agent.harness import AgentHarness
 from server.agent.planner import ScriptedPlanner
@@ -40,6 +44,10 @@ def test_sqlite_checkpoint_recovers_approval_after_runtime_restart(tmp_path) -> 
     paused = first.run(snapshot_payload(), "restartable-thread")
     assert paused.status == "awaiting_approval"
     run_id = paused.run_id
+    first.graph.update_state(
+        {"configurable": {"thread_id": "restartable-thread"}},
+        {"graph_version": "0.5.1-stateful-v1"},
+    )
     saver.conn.close()
     trace.close()
 
@@ -55,6 +63,7 @@ def test_sqlite_checkpoint_recovers_approval_after_runtime_restart(tmp_path) -> 
     rejected = restored.resume("restartable-thread", {"decision": "reject", "operations": []})
 
     assert before_resume.run_id == run_id
+    assert before_resume.graph_version == "0.5.1-stateful-v1"
     assert before_resume.status == "awaiting_approval"
     assert rejected.status == "rejected"
     assert rejected.mutation_intents == []
@@ -62,6 +71,24 @@ def test_sqlite_checkpoint_recovers_approval_after_runtime_restart(tmp_path) -> 
     assert rejected.trace[-1].kind == "run_completed"
     restored_saver.conn.close()
     restored_trace.close()
+
+
+@pytest.mark.parametrize(
+    ("schema_version", "graph_version"),
+    [
+        (2, "0.5.2-evaluation-v1"),
+        (1, "0.6.0-future-v1"),
+    ],
+)
+def test_checkpoint_compatibility_matrix_rejects_unknown_versions(
+    schema_version: int,
+    graph_version: str,
+) -> None:
+    with pytest.raises(IncompatibleCheckpointError):
+        normalize_checkpoint_state({
+            "schema_version": schema_version,
+            "graph_version": graph_version,
+        })
 
 
 def test_approve_modify_and_ack_are_idempotent() -> None:

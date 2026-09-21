@@ -1,0 +1,35 @@
+{
+  "targetRelease": "0.9.0",
+  "productVersion": {
+    "current": "0.8.0",
+    "source": "package.json",
+    "freezePolicy": "package.json, package-lock.json and server/__init__.py must match"
+  },
+  "api": {
+    "contractVersion": "1",
+    "healthEndpoint": "/api/health",
+    "diagnosticsEndpoint": "/api/diagnostics"
+  },
+  "storage": {
+    "appState": {
+      "currentSchemaVersion": 11,
+      "minimumSupportedSchemaVersion": 1
+    },
+    "backup": {
+      "currentFormatVersion": 2,
+      "supportedFormatVersions": [1, 2]
+    },
+    "knowledgeDatabase": {
+      "currentSchemaVersion": 2,
+      "minimumSupportedBackupVersion": 1
+    }
+  },
+  "agent": {
+    "schemaVersion": 1,
+    "graphVersion": "0.5.2-evaluation-v1",
+    "compatibleGraphVersions": [
+      "0.5.1-stateful-v1",
+      "0.5.2-evaluation-v1"
+    ]
+  }
+}

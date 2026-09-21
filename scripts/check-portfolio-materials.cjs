@@ -48,8 +48,9 @@ function relative(filePath) {
 
 try {
   const manifest = JSON.parse(fs.readFileSync(packageJson, 'utf8'))
-  if (manifest.version !== '0.8.0') {
-    fail(`项目版本应为 0.8.0，当前为 ${manifest.version ?? '未设置'}`)
+  const [major, minor] = String(manifest.version ?? '').split('.').map(Number)
+  if (!Number.isInteger(major) || !Number.isInteger(minor) || major < 0 || (major === 0 && minor < 8)) {
+    fail(`作品集材料要求项目版本不低于 0.8.0，当前为 ${manifest.version ?? '未设置'}`)
   }
 } catch (error) {
   fail(`package.json 无效：${error.message}`)
@@ -57,8 +58,9 @@ try {
 
 try {
   const lockfile = JSON.parse(fs.readFileSync(packageLock, 'utf8'))
-  if (lockfile.version !== '0.8.0' || lockfile.packages?.['']?.version !== '0.8.0') {
-    fail('package-lock.json 与 0.8.0 项目版本不一致')
+  const manifest = JSON.parse(fs.readFileSync(packageJson, 'utf8'))
+  if (lockfile.version !== manifest.version || lockfile.packages?.['']?.version !== manifest.version) {
+    fail('package-lock.json 与项目版本不一致')
   }
 } catch (error) {
   fail(`package-lock.json 无效：${error.message}`)

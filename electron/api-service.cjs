@@ -13,6 +13,14 @@ const LOOPBACK_HOST = '127.0.0.1'
 const STARTUP_TIMEOUT_MS = 90_000
 const HEALTH_INTERVAL_MS = 350
 const SHUTDOWN_TIMEOUT_MS = 5_000
+const SUPPORTED_API_CONTRACT_VERSION = '1'
+
+class IncompatibleApiRuntimeError extends Error {
+  constructor(message) {
+    super(message)
+    this.name = 'IncompatibleApiRuntimeError'
+  }
+}
 
 function delay(milliseconds) {
   return new Promise((resolve) => setTimeout(resolve, milliseconds))
@@ -49,7 +57,16 @@ function writeStructuredLog(stream, event, details = {}) {
 }
 
 class ApiServiceSupervisor extends EventEmitter {
-  constructor({ paths, appPath, isPackaged, env = process.env, spawnProcess = spawn, fetchImpl = globalThis.fetch }) {
+  constructor({
+    paths,
+    appPath,
+    isPackaged,
+    env = process.env,
+    spawnProcess = spawn,
+    fetchImpl = globalThis.fetch,
+    expectedVersion = null,
+    expectedApiContractVersion = null,
+  }) {
     super()
     this.paths = paths
     this.appPath = appPath
@@ -57,6 +74,8 @@ class ApiServiceSupervisor extends EventEmitter {
     this.env = env
     this.spawnProcess = spawnProcess
     this.fetchImpl = fetchImpl
+    this.expectedVersion = expectedVersion
+    this.expectedApiContractVersion = expectedApiContractVersion
     this.child = null
     this.logStream = null
     this.port = null
@@ -72,6 +91,8 @@ class ApiServiceSupervisor extends EventEmitter {
       launchKind: null,
       startedAt: null,
       readyAt: null,
+      serviceVersion: null,
+      apiContractVersion: null,
       error: null,
     }
   }
@@ -167,6 +188,8 @@ class ApiServiceSupervisor extends EventEmitter {
         launchKind: launch.kind,
         startedAt: new Date().toISOString(),
         readyAt: null,
+        serviceVersion: null,
+        apiContractVersion: null,
         error: null,
       })
       await this.waitUntilReady()
@@ -193,12 +216,32 @@ class ApiServiceSupervisor extends EventEmitter {
         const response = await this.fetchImpl(`${this.baseUrl}/api/health`, { signal: AbortSignal.timeout(2_000) })
         if (response.ok) {
           const payload = await response.json()
-          if (payload?.status === 'ok') return
+          if (payload?.status === 'ok') {
+            if (this.expectedVersion && payload.version !== this.expectedVersion) {
+              throw new IncompatibleApiRuntimeError(
+                `本机 API 版本不匹配：应用需要 ${this.expectedVersion}，实际为 ${payload.version || '未知'}。`,
+              )
+            }
+            if (
+              this.expectedApiContractVersion
+              && payload.apiContractVersion !== this.expectedApiContractVersion
+            ) {
+              throw new IncompatibleApiRuntimeError(
+                `本机 API 契约不兼容：应用需要 ${this.expectedApiContractVersion}，实际为 ${payload.apiContractVersion || '未知'}。`,
+              )
+            }
+            this.update({
+              serviceVersion: payload.version || null,
+              apiContractVersion: payload.apiContractVersion || null,
+            })
+            return
+          }
           lastError = new Error('健康检查响应格式无效。')
         } else {
           lastError = new Error(`健康检查返回 HTTP ${response.status}。`)
         }
       } catch (error) {
+        if (error instanceof IncompatibleApiRuntimeError) throw error
         lastError = error
       }
       await delay(HEALTH_INTERVAL_MS)
@@ -249,5 +292,7 @@ class ApiServiceSupervisor extends EventEmitter {
 
 module.exports = {
   ApiServiceSupervisor,
+  IncompatibleApiRuntimeError,
+  SUPPORTED_API_CONTRACT_VERSION,
   findAvailablePort,
 }

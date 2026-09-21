@@ -39,6 +39,17 @@ import type {
 import { createTaskAdaptationState } from './adaptiveDifficulty'
 
 export const CURRENT_SCHEMA_VERSION = 11
+export const MIN_SUPPORTED_SCHEMA_VERSION = 1
+
+export class UnsupportedStateVersionError extends Error {
+  constructor(version: unknown) {
+    const numericVersion = Number(version)
+    super(Number.isInteger(numericVersion) && numericVersion > CURRENT_SCHEMA_VERSION
+      ? `本机数据来自更新版本的息壤（v${numericVersion}），当前版本仅支持到 v${CURRENT_SCHEMA_VERSION}。`
+      : `本机数据的格式版本（${String(version)}）不受支持，当前版本支持 v${MIN_SUPPORTED_SCHEMA_VERSION}～v${CURRENT_SCHEMA_VERSION}。`)
+    this.name = 'UnsupportedStateVersionError'
+  }
+}
 
 const STORAGE_KEY = 'xirang-state'
 const ACTIVE_FOCUS_KEY = 'xirang-active-focus-v1'
@@ -60,6 +71,7 @@ const launchStatuses: LaunchStatus[] = ['draft', 'ready', 'warming-up', 'focusin
 const launchTaskCategories: LaunchTaskCategory[] = ['reading', 'writing', 'study', 'coding', 'admin', 'life', 'other']
 const launchWarmupTypes: LaunchWarmupType[] = ['visual', 'inhibition', 'none']
 const actionSlipStatuses: ActionSlipStatus[] = ['inbox', 'current', 'completed']
+let storageCompatibilityIssue: string | null = null
 
 const defaultSettings: AppSettings = {
   soundEnabled: true,
@@ -495,6 +507,15 @@ function parseAdaptationState(value: unknown): TaskAdaptationState {
 export function migrateState(value: unknown): AppState {
   const defaults = createDefaultState()
   if (!isRecord(value)) return defaults
+  const declaredSchemaVersion = Number(value.schemaVersion ?? 1)
+  if (
+    value.schemaVersion !== undefined
+    && (!Number.isInteger(declaredSchemaVersion)
+      || declaredSchemaVersion < MIN_SUPPORTED_SCHEMA_VERSION
+      || declaredSchemaVersion > CURRENT_SCHEMA_VERSION)
+  ) {
+    throw new UnsupportedStateVersionError(value.schemaVersion)
+  }
 
   const profile = isRecord(value.profile) ? value.profile : {}
   const levels = isRecord(profile.levels) ? profile.levels : {}
@@ -622,13 +643,17 @@ export function loadState(): AppState {
   try {
     const raw = window.localStorage.getItem(STORAGE_KEY)
       ?? LEGACY_STORAGE_KEYS.map((key) => window.localStorage.getItem(key)).find(Boolean)
-    return raw ? migrateState(JSON.parse(raw)) : createDefaultState()
-  } catch {
+    const state = raw ? migrateState(JSON.parse(raw)) : createDefaultState()
+    storageCompatibilityIssue = null
+    return state
+  } catch (error) {
+    if (error instanceof UnsupportedStateVersionError) storageCompatibilityIssue = error.message
     return createDefaultState()
   }
 }
 
 export function saveState(state: AppState) {
+  if (storageCompatibilityIssue) return
   try {
     window.localStorage.setItem(STORAGE_KEY, JSON.stringify({ ...state, schemaVersion: CURRENT_SCHEMA_VERSION }))
   } catch {
@@ -641,6 +666,15 @@ export function clearStoredState() {
   window.localStorage.removeItem(ACTIVE_FOCUS_KEY)
   window.localStorage.removeItem(ACTIVE_LAUNCH_KEY)
   LEGACY_STORAGE_KEYS.forEach((key) => window.localStorage.removeItem(key))
+  storageCompatibilityIssue = null
+}
+
+export function getStorageCompatibilityIssue() {
+  return storageCompatibilityIssue
+}
+
+export function resetStorageCompatibilityBlock() {
+  storageCompatibilityIssue = null
 }
 
 export function loadActiveFocus() {

@@ -1,9 +1,84 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { clearActiveLaunch, CURRENT_SCHEMA_VERSION, createDefaultState, loadActiveLaunch, migrateState, saveActiveLaunch } from '../src/lib/storage'
+import {
+  clearActiveLaunch,
+  clearStoredState,
+  CURRENT_SCHEMA_VERSION,
+  createDefaultState,
+  getStorageCompatibilityIssue,
+  loadActiveLaunch,
+  loadState,
+  migrateState,
+  resetStorageCompatibilityBlock,
+  saveActiveLaunch,
+  saveState,
+} from '../src/lib/storage'
 
-afterEach(() => vi.unstubAllGlobals())
+afterEach(() => {
+  resetStorageCompatibilityBlock()
+  vi.unstubAllGlobals()
+})
 
 describe('storage migration through v11', () => {
+  it.each([1, 8, 9, 10, 11])('keeps supported schema v%s readable', (schemaVersion) => {
+    const migrated = migrateState({ ...createDefaultState(), schemaVersion })
+    expect(migrated.schemaVersion).toBe(CURRENT_SCHEMA_VERSION)
+    expect(migrated.profile.goal).toBe('study')
+  })
+
+  it('fails closed for a future local schema without overwriting its raw data', () => {
+    const values = new Map<string, string>([[
+      'xirang-state',
+      JSON.stringify({ ...createDefaultState(), schemaVersion: CURRENT_SCHEMA_VERSION + 1 }),
+    ]])
+    const setItem = vi.fn((key: string, value: string) => values.set(key, value))
+    vi.stubGlobal('window', {
+      localStorage: {
+        getItem: (key: string) => values.get(key) ?? null,
+        setItem,
+        removeItem: (key: string) => values.delete(key),
+      },
+    })
+
+    const protectedRaw = values.get('xirang-state')
+    const state = loadState()
+    expect(state.schemaVersion).toBe(CURRENT_SCHEMA_VERSION)
+    expect(getStorageCompatibilityIssue()).toContain(`v${CURRENT_SCHEMA_VERSION + 1}`)
+    saveState(state)
+    expect(setItem).not.toHaveBeenCalled()
+    expect(values.get('xirang-state')).toBe(protectedRaw)
+
+    clearStoredState()
+    expect(getStorageCompatibilityIssue()).toBeNull()
+    expect(values.has('xirang-state')).toBe(false)
+  })
+
+  it('rejects a future schema passed directly to the migration boundary', () => {
+    expect(() => migrateState({
+      ...createDefaultState(),
+      schemaVersion: CURRENT_SCHEMA_VERSION + 1,
+    })).toThrow('来自更新版本')
+  })
+
+  it.each([0, 'unknown'])('fails closed for unsupported local schema %s', (schemaVersion) => {
+    const raw = JSON.stringify({ schemaVersion, profile: { goal: 'work' }, sessions: [] })
+    const values = new Map<string, string>([['xirang-state', raw]])
+    const setItem = vi.fn((key: string, value: string) => values.set(key, value))
+    vi.stubGlobal('window', {
+      localStorage: {
+        getItem: (key: string) => values.get(key) ?? null,
+        setItem,
+        removeItem: (key: string) => values.delete(key),
+      },
+    })
+
+    const state = loadState()
+    expect(state.schemaVersion).toBe(CURRENT_SCHEMA_VERSION)
+    expect(getStorageCompatibilityIssue()).toContain('不受支持')
+    saveState(state)
+    expect(setItem).not.toHaveBeenCalled()
+    expect(values.get('xirang-state')).toBe(raw)
+  })
+
   it('adds action slips without losing v8 focus data', () => {
     const migrated = migrateState({
       schemaVersion: 8,

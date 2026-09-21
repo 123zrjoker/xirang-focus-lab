@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState, type ChangeEvent } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState, type ChangeEvent } from 'react'
 import {
   createNoteKnowledgeSource,
   deleteKnowledgeSource,
@@ -30,6 +30,61 @@ interface KnowledgeBaseManagerProps {
 }
 
 type Notice = { tone: 'success' | 'error' | 'neutral'; text: string }
+
+const DIALOG_FOCUSABLE_SELECTOR = [
+  'button:not([disabled])',
+  'a[href]',
+  'input:not([disabled])',
+  'select:not([disabled])',
+  'textarea:not([disabled])',
+  '[tabindex]:not([tabindex="-1"])',
+].join(',')
+
+function useDialogFocus(open: boolean, close: () => void) {
+  const dialogRef = useRef<HTMLElement>(null)
+
+  useEffect(() => {
+    if (!open) return
+    const dialog = dialogRef.current
+    if (!dialog) return
+    const previouslyFocused = document.activeElement instanceof HTMLElement ? document.activeElement : null
+    const focusable = () => [...dialog.querySelectorAll<HTMLElement>(DIALOG_FOCUSABLE_SELECTOR)]
+    const initialFocusTarget = focusable()[0] ?? dialog
+    initialFocusTarget.focus()
+
+    function handleKeyDown(event: KeyboardEvent) {
+      if (event.key === 'Escape') {
+        event.preventDefault()
+        close()
+        return
+      }
+      if (event.key !== 'Tab') return
+      const items = focusable()
+      if (!items.length) {
+        event.preventDefault()
+        dialog?.focus()
+        return
+      }
+      const first = items[0]
+      const last = items[items.length - 1]
+      if (event.shiftKey && document.activeElement === first) {
+        event.preventDefault()
+        last.focus()
+      } else if (!event.shiftKey && document.activeElement === last) {
+        event.preventDefault()
+        first.focus()
+      }
+    }
+
+    document.addEventListener('keydown', handleKeyDown)
+    return () => {
+      document.removeEventListener('keydown', handleKeyDown)
+      previouslyFocused?.focus()
+    }
+  }, [close, open])
+
+  return dialogRef
+}
 
 function formatBytes(bytes: number) {
   if (bytes < 1024) return `${bytes} B`
@@ -77,6 +132,10 @@ export function KnowledgeBaseManager({ notes, refreshKey = 0 }: KnowledgeBaseMan
   const [notice, setNotice] = useState<Notice | null>(null)
   const [storageSummary, setStorageSummary] = useState<KnowledgeStorageSummary | null>(null)
   const available = supportsKnowledgeBase()
+  const closeSourcePreview = useCallback(() => setViewSourceId(null), [])
+  const closeChunkPreview = useCallback(() => setViewChunksSourceId(null), [])
+  const sourcePreviewRef = useDialogFocus(Boolean(viewSourceId), closeSourcePreview)
+  const chunkPreviewRef = useDialogFocus(Boolean(viewChunksSourceId), closeChunkPreview)
 
   useEffect(() => {
     let active = true
@@ -384,19 +443,19 @@ export function KnowledgeBaseManager({ notes, refreshKey = 0 }: KnowledgeBaseMan
       <div className="knowledge-boundary"><span aria-hidden="true">◉</span><p><strong>当前边界</strong>BM25、BGE 向量、RRF 融合、Cross-Encoder 重排和引用式 RAG 已接通；DeepSeek Key 可在上方由本机后端加密保存。文字型 PDF 可直接提取，扫描 PDF 暂不进行 OCR。“应用数据 JSON”暂不包含知识库文档、文本块或 AI 凭据。</p></div>
 
       {viewedSource && (
-        <div className="knowledge-preview-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) setViewSourceId(null) }}>
-          <section className="knowledge-preview" role="dialog" aria-modal="true" aria-labelledby="knowledge-preview-title">
-            <header><div><p className="eyebrow">{sourceTypeLabel(viewedSource)} · 本地快照</p><h2 id="knowledge-preview-title">{viewedSource.title}</h2><span>{formatBytes(viewedSource.sizeBytes)} · 更新于 {dateLabel(viewedSource.updatedAt)}</span></div><button type="button" onClick={() => setViewSourceId(null)} aria-label="关闭资料预览">×</button></header>
+        <div className="knowledge-preview-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) closeSourcePreview() }}>
+          <section ref={sourcePreviewRef} className="knowledge-preview" role="dialog" aria-modal="true" aria-labelledby="knowledge-preview-title" aria-describedby="knowledge-preview-description" tabIndex={-1}>
+            <header><div><p className="eyebrow">{sourceTypeLabel(viewedSource)} · 本地快照</p><h2 id="knowledge-preview-title">{viewedSource.title}</h2><span>{formatBytes(viewedSource.sizeBytes)} · 更新于 {dateLabel(viewedSource.updatedAt)}</span></div><button type="button" onClick={closeSourcePreview} aria-label="关闭资料预览">×</button></header>
             <pre>{viewedSource.content}</pre>
-            <footer><p>这里只显示保存在知识库中的{viewedSource.kind === 'docx' || viewedSource.kind === 'pdf' ? '提取正文' : '快照'}，不会修改原笔记或原始文件。</p><button className="button primary" type="button" onClick={() => setViewSourceId(null)}>关闭</button></footer>
+            <footer><p id="knowledge-preview-description">这里只显示保存在知识库中的{viewedSource.kind === 'docx' || viewedSource.kind === 'pdf' ? '提取正文' : '快照'}，不会修改原笔记或原始文件。</p><button className="button primary" type="button" onClick={closeSourcePreview}>关闭</button></footer>
           </section>
         </div>
       )}
 
       {chunkPreviewSource && (
-        <div className="knowledge-preview-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) setViewChunksSourceId(null) }}>
-          <section className="knowledge-preview knowledge-chunk-preview" role="dialog" aria-modal="true" aria-labelledby="knowledge-chunk-preview-title">
-            <header><div><p className="eyebrow">文本处理结果 · {previewChunks.length} 块</p><h2 id="knowledge-chunk-preview-title">{chunkPreviewSource.title}</h2><span>每块保留资料名称、章节、行号、字符位置和内容哈希</span></div><button type="button" onClick={() => setViewChunksSourceId(null)} aria-label="关闭文本块预览">×</button></header>
+        <div className="knowledge-preview-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) closeChunkPreview() }}>
+          <section ref={chunkPreviewRef} className="knowledge-preview knowledge-chunk-preview" role="dialog" aria-modal="true" aria-labelledby="knowledge-chunk-preview-title" aria-describedby="knowledge-chunk-preview-description" tabIndex={-1}>
+            <header><div><p className="eyebrow">文本处理结果 · {previewChunks.length} 块</p><h2 id="knowledge-chunk-preview-title">{chunkPreviewSource.title}</h2><span>每块保留资料名称、章节、行号、字符位置和内容哈希</span></div><button type="button" onClick={closeChunkPreview} aria-label="关闭文本块预览">×</button></header>
             <div className="knowledge-chunk-preview-list">
               {previewChunks.map((chunk) => (
                 <article key={chunk.id}>
@@ -406,7 +465,7 @@ export function KnowledgeBaseManager({ notes, refreshKey = 0 }: KnowledgeBaseMan
               ))}
               {!previewChunks.length && <p className="knowledge-empty">这份资料尚未生成文本块。</p>}
             </div>
-            <footer><p>位置对应知识库中保存的原文快照；短章节可能少于 300 字，以避免跨章节混合。</p><button className="button primary" type="button" onClick={() => setViewChunksSourceId(null)}>关闭</button></footer>
+            <footer><p id="knowledge-chunk-preview-description">位置对应知识库中保存的原文快照；短章节可能少于 300 字，以避免跨章节混合。</p><button className="button primary" type="button" onClick={closeChunkPreview}>关闭</button></footer>
           </section>
         </div>
       )}

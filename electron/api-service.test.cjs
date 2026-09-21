@@ -70,18 +70,100 @@ test('supervisor publishes ready and stopped states', async () => {
     appPath: process.cwd(),
     isPackaged: false,
     env: { XIRANG_DESKTOP_API_EXECUTABLE: process.execPath },
+    expectedVersion: '0.8.0',
+    expectedApiContractVersion: '1',
     spawnProcess: () => child,
-    fetchImpl: async () => ({ ok: true, json: async () => ({ status: 'ok' }) }),
+    fetchImpl: async () => ({
+      ok: true,
+      json: async () => ({ status: 'ok', version: '0.8.0', apiContractVersion: '1' }),
+    }),
   })
   const states = []
   supervisor.on('status', (status) => states.push(status.state))
   await supervisor.start()
   assert.equal(supervisor.snapshot().state, 'ready')
   assert.equal(supervisor.snapshot().pid, 1234)
+  assert.equal(supervisor.snapshot().serviceVersion, '0.8.0')
+  assert.equal(supervisor.snapshot().apiContractVersion, '1')
   await supervisor.stop()
   assert.equal(supervisor.snapshot().state, 'stopped')
   assert.ok(states.includes('starting'))
   assert.ok(states.includes('ready'))
+})
+
+test('supervisor fails fast when the bundled API contract is incompatible', async () => {
+  const child = new EventEmitter()
+  child.pid = 2345
+  child.stdout = new PassThrough()
+  child.stderr = new PassThrough()
+  child.kill = () => {
+    queueMicrotask(() => child.emit('exit', 0, null))
+    return true
+  }
+  const root = path.join(os.tmpdir(), `xirang-incompatible-${process.pid}`)
+  const supervisor = new ApiServiceSupervisor({
+    paths: {
+      dataRoot: root, modelRoot: root, backendRoot: root, logRoot: root,
+      checkpointPath: path.join(root, 'checkpoint.sqlite3'), credentialDir: path.join(root, 'credentials'),
+      vectorIndexDir: path.join(root, 'vectors'), vectorMetaPath: path.join(root, 'meta.json'),
+    },
+    appPath: process.cwd(),
+    isPackaged: false,
+    env: { XIRANG_DESKTOP_API_EXECUTABLE: process.execPath },
+    expectedVersion: '0.8.0',
+    expectedApiContractVersion: '1',
+    spawnProcess: () => child,
+    fetchImpl: async () => ({
+      ok: true,
+      json: async () => ({ status: 'ok', version: '0.8.0', apiContractVersion: '2' }),
+    }),
+  })
+
+  await assert.rejects(supervisor.start(), /本机 API 契约不兼容/)
+  assert.equal(supervisor.snapshot().state, 'failed')
+  assert.match(supervisor.snapshot().error, /应用需要 1，实际为 2/)
+  await supervisor.waitForLogClose()
+  fs.rmSync(root, { recursive: true, force: true })
+})
+
+test('supervisor exposes an unexpected exit and recovers through restart', async () => {
+  const root = path.join(os.tmpdir(), `xirang-exit-recovery-${process.pid}`)
+  const children = []
+  const supervisor = new ApiServiceSupervisor({
+    paths: {
+      dataRoot: root, modelRoot: root, backendRoot: root, logRoot: root,
+      checkpointPath: path.join(root, 'checkpoint.sqlite3'), credentialDir: path.join(root, 'credentials'),
+      vectorIndexDir: path.join(root, 'vectors'), vectorMetaPath: path.join(root, 'meta.json'),
+    },
+    appPath: process.cwd(),
+    isPackaged: false,
+    env: { XIRANG_DESKTOP_API_EXECUTABLE: process.execPath },
+    spawnProcess: () => {
+      const child = new EventEmitter()
+      child.pid = 3000 + children.length
+      child.stdout = new PassThrough()
+      child.stderr = new PassThrough()
+      child.kill = () => {
+        queueMicrotask(() => child.emit('exit', 0, null))
+        return true
+      }
+      children.push(child)
+      return child
+    },
+    fetchImpl: async () => ({ ok: true, json: async () => ({ status: 'ok' }) }),
+  })
+
+  await supervisor.start()
+  children[0].emit('exit', 23, null)
+  assert.equal(supervisor.snapshot().state, 'failed')
+  assert.match(supervisor.snapshot().error, /意外退出.*code=23/)
+
+  await supervisor.restart()
+  assert.equal(supervisor.snapshot().state, 'ready')
+  assert.equal(children.length, 2)
+  await supervisor.stop()
+  await supervisor.waitForLogClose()
+  fs.rmSync(root, { recursive: true, force: true })
 })
 
 test('packaged supervisor uses the resources directory instead of app.asar as cwd', async () => {
