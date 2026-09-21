@@ -1,7 +1,7 @@
 {
   "targetRelease": "0.9.0",
   "productVersion": {
-    "current": "0.8.0",
+    "current": "0.9.0",
     "source": "package.json",
     "freezePolicy": "package.json, package-lock.json and server/__init__.py must match"
   },

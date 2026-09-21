@@ -1,4 +1,4 @@
-param([string]$SetupPath = 'release\Xirang-Setup-0.7.0-x64.exe')
+param([string]$SetupPath = 'release\Xirang-Setup-0.9.0-x64.exe')
 
 $ErrorActionPreference = 'Stop'
 

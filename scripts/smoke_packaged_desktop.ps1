@@ -20,6 +20,7 @@ if (-not $appExe) { throw 'Packaged desktop executable was not found.' }
 
 $runtimeRoot = Join-Path ([System.IO.Path]::GetTempPath()) ("xirang-packaged-smoke-" + [guid]::NewGuid().ToString('N'))
 New-Item -ItemType Directory -Path $runtimeRoot | Out-Null
+$rendererDataRoot = Join-Path $runtimeRoot 'renderer-user-data'
 $previousDataRoot = $env:XIRANG_DATA_DIR
 $previousSmokeExit = $env:XIRANG_DESKTOP_SMOKE_AUTO_EXIT_MS
 $env:XIRANG_DATA_DIR = $runtimeRoot
@@ -29,7 +30,7 @@ $stopwatch = [System.Diagnostics.Stopwatch]::StartNew()
 $healthyAtSeconds = $null
 
 try {
-  $process = Start-Process -FilePath $appExe.FullName -PassThru -WindowStyle Hidden
+  $process = Start-Process -FilePath $appExe.FullName -ArgumentList "--user-data-dir=$rendererDataRoot" -PassThru -WindowStyle Hidden
   $logPath = Join-Path $runtimeRoot 'logs\desktop-api.log'
   $deadline = [DateTime]::UtcNow.AddSeconds(120)
   $baseUrl = $null
@@ -80,6 +81,7 @@ try {
     healthy = $true
     gracefulExit = $true
     sidecarStopped = $true
+    rendererDataIsolated = $true
     modelAvailable = $health.index.modelAvailable
     rerankerAvailable = $health.reranker.available
     healthyAtSeconds = $healthyAtSeconds

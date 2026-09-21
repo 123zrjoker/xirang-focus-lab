@@ -4,7 +4,7 @@
   "description": "本地优先的注意力训练、专注启动与可审批 AI Agent 桌面应用",
   "author": "Xirang Project Contributors",
   "private": true,
-  "version": "0.8.0",
+  "version": "0.9.0",
   "type": "module",
   "main": "electron/main.cjs",
   "scripts": {
@@ -40,7 +40,8 @@
     "desktop:smoke": "node scripts/smoke-desktop-api.cjs",
     "desktop:smoke:sidecar": "node scripts/smoke-desktop-api.cjs --sidecar",
     "desktop:smoke:packaged": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/smoke_packaged_desktop.ps1",
-    "desktop:smoke:portable": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/smoke_packaged_desktop.ps1 -ExecutablePath release\\Xirang-Portable-0.7.0-x64.exe",
+    "desktop:smoke:portable": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/smoke_packaged_desktop.ps1 -ExecutablePath release\\Xirang-Portable-0.9.0-x64.exe",
+    "desktop:smoke:upgrade": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/smoke_upgrade_desktop.ps1",
     "desktop": "npm run build && electron .",
     "desktop:open": "electron .",
     "desktop:pack": "npm run build && npm run desktop:backend:ensure && electron-builder --dir",
