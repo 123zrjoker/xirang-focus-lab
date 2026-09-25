@@ -46,6 +46,12 @@ function pageFromHash(): Page {
   return ['home', 'today', 'notes', 'knowledge', 'launch', 'training', 'focus', 'progress', 'settings', 'assessment'].includes(value) ? value : 'home'
 }
 
+const fontSizeAdjustments: Record<AppSettings['fontSize'], string> = {
+  small: '-1px',
+  standard: '0px',
+  large: '2px',
+}
+
 export default function App() {
   const [state, setState] = useState<AppState>(() => loadState())
   const [storageCompatibilityIssue, setStorageCompatibilityIssue] = useState<string | null>(() => getStorageCompatibilityIssue())
@@ -72,6 +78,7 @@ export default function App() {
     root.classList.toggle('motion-off', !state.settings.animationsEnabled)
     root.classList.toggle('training-tips-off', !state.settings.trainingTipsEnabled)
     root.dataset.fontSize = state.settings.fontSize
+    root.style.setProperty('--font-size-adjust', fontSizeAdjustments[state.settings.fontSize])
   }, [state.settings.animationsEnabled, state.settings.fontSize, state.settings.trainingTipsEnabled])
 
   useEffect(() => {
