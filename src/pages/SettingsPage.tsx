@@ -1,5 +1,4 @@
 import { useRef, useState, type ChangeEvent, type ReactNode } from 'react'
-import { KnowledgeBaseManager } from '../components/KnowledgeBaseManager'
 import { AIProviderSettings } from '../components/AIProviderSettings'
 import { DesktopServicePanel } from '../components/DesktopServicePanel'
 import {
@@ -71,7 +70,6 @@ export function SettingsPage({
   const [message, setMessage] = useState<{ tone: 'success' | 'error' | 'neutral'; text: string } | null>(null)
   const [confirmClear, setConfirmClear] = useState(false)
   const [notificationPermission, setNotificationPermission] = useState(notificationCapability())
-  const [knowledgeRefreshKey, setKnowledgeRefreshKey] = useState(0)
 
   const assessments = state.assessments ?? []
   const latestActivity = [
@@ -122,7 +120,6 @@ export function SettingsPage({
       }
       if (backup.knowledgeBase) await restoreKnowledgeBase(backup.knowledgeBase)
       onReplaceState(nextState)
-      setKnowledgeRefreshKey((current) => current + 1)
       setNotificationPermission(notificationCapability())
       setConfirmClear(false)
       setMessage({ tone: 'success', text: backup.knowledgeBase
@@ -161,7 +158,6 @@ export function SettingsPage({
   async function clearAllData() {
     try {
       await onClear()
-      setKnowledgeRefreshKey((current) => current + 1)
       setConfirmClear(false)
       setMessage({ tone: 'success', text: '此设备上的应用数据与知识库资料已清空。' })
     } catch (error) {
@@ -232,7 +228,31 @@ export function SettingsPage({
           <section className="settings-card card-surface">
             <div className="settings-card-heading">
               <span>02</span>
-              <div><p className="eyebrow">体验设置</p><h2>反馈与提醒</h2></div>
+              <div><p className="eyebrow">体验设置</p><h2>显示、反馈与提醒</h2></div>
+            </div>
+            <div className="font-size-setting">
+              <div>
+                <strong>界面字体大小</strong>
+                <p>调整正文、标签和操作文字；训练刺激与数据图形保持原有比例。</p>
+              </div>
+              <div className="font-size-options" role="group" aria-label="界面字体大小">
+                {([
+                  ['small', '较小', 'A'],
+                  ['standard', '标准', 'A'],
+                  ['large', '较大', 'A'],
+                ] as const).map(([value, label, preview]) => (
+                  <button
+                    key={value}
+                    type="button"
+                    className={state.settings.fontSize === value ? 'active' : ''}
+                    aria-pressed={state.settings.fontSize === value}
+                    onClick={() => onUpdateSettings({ fontSize: value })}
+                  >
+                    <span className={`font-size-sample ${value}`}>{preview}</span>
+                    <small>{label}</small>
+                  </button>
+                ))}
+              </div>
             </div>
             <div className="toggle-list">
               <ToggleRow
@@ -269,9 +289,7 @@ export function SettingsPage({
 
           <DesktopServicePanel />
 
-          <AIProviderSettings onChanged={() => setKnowledgeRefreshKey((current) => current + 1)} />
-
-          <KnowledgeBaseManager notes={state.personalNotes} refreshKey={knowledgeRefreshKey} />
+          <AIProviderSettings />
         </div>
 
         <aside className="settings-side">

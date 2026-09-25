@@ -45,7 +45,7 @@ jobs:
           name: quality-reports
           path: |
             artifacts/evals/0.5.2-agent-fake-eval.*
-            artifacts/performance/0.7.0-api-baseline.*
+            artifacts/performance/*-api-baseline.*
           if-no-files-found: error
 
   dependency-security:

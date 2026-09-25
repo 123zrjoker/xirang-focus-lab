@@ -355,7 +355,7 @@ export function KnowledgeBaseManager({ notes, refreshKey = 0 }: KnowledgeBaseMan
     <section className="settings-card knowledge-manager card-surface">
       <div className="knowledge-heading">
         <div className="settings-card-heading">
-          <span>04</span>
+          <span>KB</span>
           <div><p className="eyebrow">AI 与知识库</p><h2>个人知识来源</h2></div>
         </div>
         <span className="knowledge-offline-badge"><i />本地 RAG · DeepSeek</span>

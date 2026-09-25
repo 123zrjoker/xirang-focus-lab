@@ -4,6 +4,7 @@ import { AssessmentPage } from './pages/AssessmentPage'
 import { FocusPage } from './pages/FocusPage'
 import { HomePage } from './pages/HomePage'
 import { LaunchPage } from './pages/LaunchPage'
+import { KnowledgePage } from './pages/KnowledgePage'
 import { NotesPage } from './pages/NotesPage'
 import { ProgressPage } from './pages/ProgressPage'
 import { SettingsPage } from './pages/SettingsPage'
@@ -42,7 +43,7 @@ import type {
 
 function pageFromHash(): Page {
   const value = window.location.hash.replace('#/', '') as Page
-  return ['home', 'today', 'notes', 'launch', 'training', 'focus', 'progress', 'settings', 'assessment'].includes(value) ? value : 'home'
+  return ['home', 'today', 'notes', 'knowledge', 'launch', 'training', 'focus', 'progress', 'settings', 'assessment'].includes(value) ? value : 'home'
 }
 
 export default function App() {
@@ -70,7 +71,8 @@ export default function App() {
     const root = document.documentElement
     root.classList.toggle('motion-off', !state.settings.animationsEnabled)
     root.classList.toggle('training-tips-off', !state.settings.trainingTipsEnabled)
-  }, [state.settings.animationsEnabled, state.settings.trainingTipsEnabled])
+    root.dataset.fontSize = state.settings.fontSize
+  }, [state.settings.animationsEnabled, state.settings.fontSize, state.settings.trainingTipsEnabled])
 
   useEffect(() => {
     if (page !== 'today') return
@@ -460,6 +462,7 @@ export default function App() {
       }}
     />
   )
+  else if (page === 'knowledge') content = <KnowledgePage notes={state.personalNotes} />
   else if (page === 'launch') content = (
     <LaunchPage
       launch={activeLaunch}

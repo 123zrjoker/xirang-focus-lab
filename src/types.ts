@@ -1,4 +1,6 @@
-export type Page = 'home' | 'today' | 'notes' | 'launch' | 'training' | 'focus' | 'progress' | 'settings' | 'assessment'
+export type Page = 'home' | 'today' | 'notes' | 'knowledge' | 'launch' | 'training' | 'focus' | 'progress' | 'settings' | 'assessment'
+
+export type FontSizePreference = 'small' | 'standard' | 'large'
 
 export type TaskType = 'schulte' | 'go-no-go' | 'vigilance' | 'stroop'
 
@@ -287,6 +289,7 @@ export interface AppSettings {
   animationsEnabled: boolean
   trainingTipsEnabled: boolean
   desktopNotificationsEnabled: boolean
+  fontSize: FontSizePreference
 }
 
 export interface AppState {

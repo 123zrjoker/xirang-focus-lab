@@ -6,6 +6,8 @@ param(
 $ErrorActionPreference = 'Stop'
 
 $projectRoot = Split-Path -Parent $PSScriptRoot
+$packageJson = Get-Content -LiteralPath (Join-Path $projectRoot 'package.json') -Raw | ConvertFrom-Json
+$releaseVersion = [string]$packageJson.version
 $resolvedPython = if ([System.IO.Path]::IsPathRooted($PythonPath)) {
   $PythonPath
 } else {
@@ -24,7 +26,7 @@ New-Item -ItemType Directory -Path $resolvedOutput -Force | Out-Null
 $npmAuditPath = Join-Path $resolvedOutput 'npm-audit.json'
 $npmSbomPath = Join-Path $resolvedOutput 'npm.cdx.json'
 $pythonSbomPath = Join-Path $resolvedOutput 'python.cdx.json'
-$summaryPath = Join-Path $resolvedOutput '0.7.0-security-audit.md'
+$summaryPath = Join-Path $resolvedOutput "$releaseVersion-security-audit.md"
 
 Push-Location $projectRoot
 try {
@@ -70,7 +72,7 @@ try {
     -and $pythonVulnerabilityCount -eq 0
   $pythonCountText = if ($null -eq $pythonVulnerabilityCount) { 'unknown (tool failed)' } else { [string]$pythonVulnerabilityCount }
   $lines = @(
-    '# 0.7.0 Dependency Security Audit and SBOM',
+    "# $releaseVersion Dependency Security Audit and SBOM",
     '',
     "> Executed: $([DateTime]::UtcNow.ToString('o')); gate: $(if ($passed) { 'passed' } else { 'failed' }).",
     '',
@@ -80,8 +82,7 @@ try {
     "| npm CycloneDX SBOM | $(if ($npmSbomExitCode -eq 0) { 'generated' } else { 'generation failed' }); exit=$npmSbomExitCode |",
     "| Python pip-audit + CycloneDX SBOM | vulnerabilities=$pythonCountText; exit=$pythonAuditExitCode |",
     '',
-    'JSON audit output and SBOMs are not committed; CI preserves them as run artifacts. This Markdown file records the gate summary only.',
-    ''
+    'JSON audit output and SBOMs are not committed; CI preserves them as run artifacts. This Markdown file records the gate summary only.'
   )
   [System.IO.File]::WriteAllLines($summaryPath, $lines, [System.Text.UTF8Encoding]::new($false))
 

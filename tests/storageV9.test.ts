@@ -115,6 +115,16 @@ describe('storage migration through v11', () => {
     expect(migrated.personalNotes[0]).toMatchObject({ title: '复盘 想法', content: '第一行\n第二行' })
   })
 
+  it('adds a safe font-size preference to older settings', () => {
+    const defaults = migrateState({ ...createDefaultState(), settings: {} })
+    const large = migrateState({ ...createDefaultState(), settings: { fontSize: 'large' } })
+    const invalid = migrateState({ ...createDefaultState(), settings: { fontSize: 'giant' } })
+
+    expect(defaults.settings.fontSize).toBe('standard')
+    expect(large.settings.fontSize).toBe('large')
+    expect(invalid.settings.fontSize).toBe('standard')
+  })
+
   it('migrates and bounds approved agent plans in v11', () => {
     const base = createDefaultState()
     const migrated = migrateState({

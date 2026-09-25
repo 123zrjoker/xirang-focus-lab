@@ -137,7 +137,7 @@ def render_markdown(report: dict[str, object]) -> str:
     metrics = report["metrics"]
     checks = report["checks"]
     rows = [
-        "# 0.7.0 本地模型与资源性能基线",
+        f"# {report['version']} 本地模型与资源性能基线",
         "",
         f"> 执行时间：{report['executedAt']}；平台：{report['platform']}；Python：{report['pythonVersion']}。",
         "",
@@ -171,7 +171,7 @@ def render_markdown(report: dict[str, object]) -> str:
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Benchmark local BGE, Qdrant and ONNX reranker resources.")
     parser.add_argument("--chunks", type=int, default=64)
-    parser.add_argument("--output", type=Path, default=Path("artifacts/performance/0.7.0-model-resource-baseline.md"))
+    parser.add_argument("--output", type=Path, default=Path(f"artifacts/performance/{__version__}-model-resource-baseline.md"))
     return parser.parse_args()
 
 

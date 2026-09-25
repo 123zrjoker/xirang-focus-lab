@@ -1,8 +1,8 @@
 param(
-  [string]$BaselineSetupPath = 'release-candidate\0.9.0\Xirang-Setup-0.9.0-x64.exe',
-  [string]$CandidateSetupPath = 'release-candidate\1.0.0\Xirang-Setup-1.0.0-x64.exe',
-  [string]$BaselineVersion = '0.9.0',
-  [string]$CandidateVersion = '1.0.0'
+  [string]$BaselineSetupPath = 'release-candidate\1.0.0\Xirang-Setup-1.0.0-x64.exe',
+  [string]$CandidateSetupPath = 'release-candidate\1.1.0\Xirang-Setup-1.1.0-x64.exe',
+  [string]$BaselineVersion = '1.0.0',
+  [string]$CandidateVersion = '1.1.0'
 )
 
 $ErrorActionPreference = 'Stop'

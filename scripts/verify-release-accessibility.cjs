@@ -1,8 +1,10 @@
 const { app, BrowserWindow } = require('electron')
+const fs = require('node:fs')
 const path = require('node:path')
 const { version } = require('../package.json')
 
 const previewBase = process.argv[2] || null
+const previewOutput = process.argv[3] || null
 const distIndex = path.resolve(__dirname, '..', 'dist', 'index.html')
 let currentStep = '启动隔离验收'
 
@@ -13,12 +15,12 @@ async function pause(milliseconds = 150) {
   await new Promise((resolve) => setTimeout(resolve, milliseconds))
 }
 
-async function loadSettings(window) {
+async function loadKnowledge(window) {
   if (previewBase) {
-    await window.loadURL(`${previewBase.replace(/\/$/, '')}/#/settings`)
+    await window.loadURL(`${previewBase.replace(/\/$/, '')}/#/knowledge`)
     return
   }
-  await window.loadFile(distIndex, { hash: '/settings' })
+  await window.loadFile(distIndex, { hash: '/knowledge' })
 }
 
 async function waitFor(window, expression, label, timeoutMs = 8_000) {
@@ -39,6 +41,24 @@ async function activeElementSnapshot(window) {
       ariaLabel: element?.getAttribute?.('aria-label') || '',
     }
   })()`)
+}
+
+async function capture(window, filename) {
+  if (!previewOutput) return
+  await window.webContents.executeJavaScript('new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)))')
+  const image = await window.webContents.capturePage()
+  fs.mkdirSync(previewOutput, { recursive: true })
+  fs.writeFileSync(path.join(previewOutput, filename), image.toPNG())
+}
+
+async function assertNoHorizontalOverflow(window, label) {
+  const dimensions = await window.webContents.executeJavaScript(`({
+    clientWidth: document.documentElement.clientWidth,
+    scrollWidth: document.documentElement.scrollWidth,
+  })`)
+  if (dimensions.scrollWidth > dimensions.clientWidth) {
+    throw new Error(`${label}出现横向溢出：${dimensions.scrollWidth}/${dimensions.clientWidth}`)
+  }
 }
 
 async function openPreview(window, buttonText) {
@@ -67,7 +87,7 @@ app.whenReady().then(async () => {
 
   try {
     currentStep = '准备隔离业务数据'
-    await loadSettings(window)
+    await loadKnowledge(window)
     await window.webContents.executeJavaScript('localStorage.clear()')
     await window.reload()
     await waitFor(window, "localStorage.getItem('xirang-state')", '默认业务状态写入')
@@ -85,6 +105,14 @@ app.whenReady().then(async () => {
     })()`)
     await window.reload()
     await waitFor(window, "document.querySelector('.knowledge-note-list article')", '知识库笔记加载')
+    await assertNoHorizontalOverflow(window, '桌面知识页')
+    const desktopNavigation = await window.webContents.executeJavaScript("[...document.querySelectorAll('.desktop-nav button')].map((item) => item.textContent.trim())")
+    if (!desktopNavigation.includes('知识')) throw new Error('桌面主导航缺少知识入口。')
+    await capture(window, 'knowledge-desktop.png')
+
+    window.setSize(820, 900)
+    await assertNoHorizontalOverflow(window, '窄屏桌面知识页')
+    window.setSize(1280, 900)
 
     currentStep = '生成隔离知识来源'
     await window.webContents.executeJavaScript(`(() => {
@@ -130,6 +158,30 @@ app.whenReady().then(async () => {
     await waitFor(window, "!document.querySelector('.knowledge-preview[role=dialog]')", '分块对话框关闭')
     const restoredChunkFocus = await activeElementSnapshot(window)
     if (restoredChunkFocus.text !== '分块') throw new Error('关闭分块对话框后没有归还触发按钮焦点。')
+
+    currentStep = '验证移动知识页布局'
+    window.setSize(390, 844)
+    await window.reload()
+    await waitFor(window, "getComputedStyle(document.querySelector('.mobile-nav')).display === 'grid'", '移动导航显示')
+    const mobileNavigation = await window.webContents.executeJavaScript("[...document.querySelectorAll('.mobile-nav button')].map((item) => item.textContent.trim())")
+    if (mobileNavigation.length !== 7 || !mobileNavigation.includes('⌕知识')) {
+      throw new Error(`移动导航入口不完整：${JSON.stringify(mobileNavigation)}`)
+    }
+    await assertNoHorizontalOverflow(window, '移动知识页')
+    await capture(window, 'knowledge-mobile.png')
+
+    currentStep = '验证字体大小设置'
+    window.setSize(1280, 900)
+    if (previewBase) await window.loadURL(`${previewBase.replace(/\/$/, '')}/#/settings`)
+    else await window.loadFile(distIndex, { hash: '/settings' })
+    await waitFor(window, "document.querySelectorAll('.font-size-options button').length === 3", '字体大小选项')
+    const standardSize = await window.webContents.executeJavaScript("parseFloat(getComputedStyle(document.querySelector('.setting-toggle-row strong')).fontSize)")
+    await window.webContents.executeJavaScript("[...document.querySelectorAll('.font-size-options button')].find((item) => item.textContent.includes('较大')).click()")
+    await waitFor(window, "document.documentElement.dataset.fontSize === 'large'", '大号字体生效')
+    const largeSize = await window.webContents.executeJavaScript("parseFloat(getComputedStyle(document.querySelector('.setting-toggle-row strong')).fontSize)")
+    if (largeSize <= standardSize) throw new Error(`大号字体没有增大：${standardSize} -> ${largeSize}`)
+    await assertNoHorizontalOverflow(window, '大号字体设置页')
+    await capture(window, 'settings-large-font.png')
 
     currentStep = '验证未来版本数据只读保护'
     const futureRaw = JSON.stringify({ schemaVersion: 999, profile: { goal: 'work' }, sessions: [] })

@@ -145,6 +145,10 @@ app.whenReady().then(async () => {
   }
   await capture(window, '0.8.0-demo-import-data.png', '.data-card')
 
+  currentStep = '打开知识工作区'
+  await window.webContents.executeJavaScript("window.location.hash = '/knowledge'")
+  await waitFor(window, "document.querySelector('.knowledge-manager')", '知识工作区加载')
+
   currentStep = '导入合成知识文档'
   await dispatchTextFile(
     window,

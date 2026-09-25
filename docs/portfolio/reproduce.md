@@ -41,7 +41,7 @@ npm run portfolio:check
    ```
 
 4. 打开 `http://127.0.0.1:5173`，进入“设置 → 数据管理”，导入 [`xirang-demo-backup.json`](demo-data/xirang-demo-backup.json)。
-5. 在“设置 → AI 与知识库”导入 [`focus-methods-demo.md`](demo-data/focus-methods-demo.md)，明确授权后即可验证分块、BM25 检索和最小证据预览。
+5. 在“知识 → 个人知识来源”导入 [`focus-methods-demo.md`](demo-data/focus-methods-demo.md)，明确授权后即可验证分块、BM25 检索和最小证据预览。
 6. 数据页选择“全部”范围，可查看合成训练和现实专注记录。所有记录均为演示数据，不是用户行为样本。
 
 更完整的演示步骤见[演示数据说明](demo-data/README.md)和[演示脚本](demo-script.md)。

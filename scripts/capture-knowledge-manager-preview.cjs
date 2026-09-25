@@ -137,7 +137,7 @@ async function verifyLegacyMigration(previewUrl) {
         }
       }
     })`)
-    await migrationWindow.loadURL(`${previewUrl}#/settings`)
+    await migrationWindow.loadURL(`${previewUrl}#/knowledge`)
     const snapshot = await waitForStorage(migrationWindow, (state) => state.sources.length === 1 && state.chunks.length === 1, '旧版资料自动分块')
     const migratedSource = snapshot.sources.find((source) => source.id === 'legacy-source')
     if (snapshot.version !== 2 || snapshot.permissionCount !== 1 || !migratedSource) {
@@ -257,8 +257,8 @@ app.whenReady().then(async () => {
     if (event.level === 'error') console.error(`渲染进程：${event.message}`)
   })
 
-  currentStep = '加载设置页'
-  await window.loadURL(`${previewBase}#/settings`)
+  currentStep = '加载知识页'
+  await window.loadURL(`${previewBase}#/knowledge`)
   await pause(400)
   await window.webContents.executeJavaScript('localStorage.clear()')
   await window.reload()
@@ -278,7 +278,7 @@ app.whenReady().then(async () => {
 
   currentStep = '检查知识库初始界面'
   const initialText = await window.webContents.executeJavaScript("document.querySelector('.knowledge-manager')?.innerText || ''")
-  if (!initialText.includes('个人知识来源') || !initialText.includes('AI 未接入') || !initialText.includes('启动困难观察')) {
+  if (!initialText.includes('个人知识来源') || !initialText.includes('本地 RAG · DeepSeek') || !initialText.includes('启动困难观察')) {
     throw new Error('个人知识库管理区没有正确加载')
   }
 

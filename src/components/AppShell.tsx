@@ -10,6 +10,7 @@ interface AppShellProps {
 const navItems: { page: Page; label: string; icon: string }[] = [
   { page: 'today', label: '今日', icon: '◫' },
   { page: 'notes', label: '便签', icon: '✎' },
+  { page: 'knowledge', label: '知识', icon: '⌕' },
   { page: 'training', label: '训练', icon: '◎' },
   { page: 'focus', label: '专注', icon: '◉' },
   { page: 'progress', label: '数据', icon: '↗' },

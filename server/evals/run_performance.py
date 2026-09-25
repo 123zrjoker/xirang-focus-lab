@@ -11,6 +11,8 @@ import time
 from pathlib import Path
 from typing import Callable
 
+from server import __version__
+
 
 DEFAULT_THRESHOLDS_MS = {
     "healthP95Ms": 250.0,
@@ -71,7 +73,7 @@ def render_markdown(report: dict[str, object]) -> str:
     metrics = report["metrics"]
     checks = report["checks"]
     rows = [
-        "# 0.7.0 本机 API 性能基线",
+        f"# {report['version']} 本机 API 性能基线",
         "",
         f"> 执行时间：{report['executedAt']}；平台：{report['platform']}；Python：{report['pythonVersion']}。",
         "",
@@ -106,7 +108,7 @@ def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Run deterministic local API latency gates.")
     parser.add_argument("--warmup", type=int, default=5)
     parser.add_argument("--iterations", type=int, default=40)
-    parser.add_argument("--output", type=Path, default=Path("artifacts/performance/0.7.0-api-baseline.md"))
+    parser.add_argument("--output", type=Path, default=Path(f"artifacts/performance/{__version__}-api-baseline.md"))
     return parser.parse_args()
 
 
@@ -118,7 +120,6 @@ def main() -> int:
     with tempfile.TemporaryDirectory(prefix="xirang-performance-") as temporary:
         os.environ["XIRANG_DATA_DIR"] = temporary
         from fastapi.testclient import TestClient
-        from server import __version__
         from server.agent.harness import AgentHarness
         from server.evals.agent.dataset import DEFAULT_FAKE_DATASET, load_dataset
         import server.main as main_module

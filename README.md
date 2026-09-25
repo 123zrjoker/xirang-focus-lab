@@ -1,8 +1,8 @@
 # 息壤 · 注意力训练与专注启动实验室
 
-> 招聘方与代码审阅者可从 [`docs/portfolio/README.md`](docs/portfolio/README.md) 开始：10 分钟项目导览、脱敏演示数据、架构与数据边界、复现命令、技术决策、失败案例和指标证据集中在同一入口。0.8.0 展示材料正在实施，当前可执行版本仍为 0.7.0。
+> 当前正式版本为 **1.1.0**。招聘方与代码审阅者可从 [`docs/portfolio/README.md`](docs/portfolio/README.md) 开始：10 分钟项目导览、脱敏演示数据、架构与数据边界、复现命令、技术决策、失败案例和指标证据集中在同一入口。
 
-0.7.0 工程质量与可靠性已完成：Windows CI、CycloneDX SBOM、安全审计、结构化诊断、Electron/Agent 并发保护、两级有界查询缓存、可取消索引后台任务，以及 API/SSE/真实本地模型/资源门禁均已建立。0.7.0 sidecar、unpacked、NSIS 与 Portable 已全量重建并通过本机启动、后台索引、退出回收、安装/卸载回归，SHA-256 已记录；首次远端 Windows CI 的质量与安全 Job 也已全部通过。
+1.1.0 将个人知识来源、文本处理、检索实验和引用式回答集中到独立“知识”工作区，并新增较小、标准、较大三档界面字体。项目已建立 Windows CI、CycloneDX SBOM、安全审计、无障碍与迁移烟测、Agent Evaluation、API 性能门禁，以及 Setup / Portable 桌面制品验收链路。
 
 0.6.0 桌面端一体化已按当前 Windows 环境结果完成阶段验收：Electron 主进程会为每次启动分配随机本机回环端口，自动启动、探活、监控并关闭 FastAPI sidecar；沙箱化 preload 只向页面暴露 API 地址、运行状态和重启操作，不开放 Node 能力。Checkpoint、DPAPI 凭据、向量索引和日志统一使用稳定的本机数据目录，模型作为只读资源随桌面包提供。独立干净 Windows 复验不被当前开发机结果替代，已保留到 0.9.0 发布候选门禁。
 
@@ -186,7 +186,7 @@ npm run desktop:dist
 powershell -NoProfile -ExecutionPolicy Bypass -File scripts\smoke_installed_desktop.ps1
 ```
 
-输出文件位于 `release/`。安装版会创建桌面和开始菜单快捷方式；便携版无需安装即可运行。打包产物内含 Python sidecar 和固定版本本地模型，目标机器不需要安装 Python、创建虚拟环境或手动启动 API。0.7.0 的本机冻结结果、启动时间与 SHA-256 见 [`0.7.0 桌面端冻结验收记录`](artifacts/evals/0.7.0-desktop-acceptance.md)。
+输出文件位于 `release/`。安装版会创建桌面和开始菜单快捷方式；便携版无需安装即可运行。打包产物内含 Python sidecar 和固定版本本地模型，目标机器不需要安装 Python、创建虚拟环境或手动启动 API。1.1.0 的门禁、制品与 SHA-256 见 [`1.1.0 发布进度`](artifacts/evals/1.1.0-release-progress.md)。
 
 第一版本地构建尚未配置商业代码签名证书，因此 Windows SmartScreen 可能显示“未知发布者”。自用时可核对文件来源和 SHA-256 后运行；公开分发前应购买并配置 Windows 代码签名证书。
 
@@ -197,7 +197,8 @@ powershell -NoProfile -ExecutionPolicy Bypass -File scripts\smoke_installed_desk
 - “设置”页支持导出完整备份 JSON、导入恢复、导出 CSV 和二次确认清空。
 - 完整 JSON 备份可以在浏览器版与桌面版之间手动迁移训练、专注、计划、待办、笔记、设置和 IndexedDB 知识库。DeepSeek Key、可重建向量索引和待审批 Agent 线程不会进入备份；旧版仅含应用数据的 JSON 仍可导入且不会清空现有知识库。
 - 数据格式当前为 v11；应用会自动迁移旧版状态。v8 的“稍后任务”会并入行动便签收集区，v10 新增独立笔记集合，v11 新增最近 50 份已批准 Agent 计划及本地幂等 action ledger。
-- 可在设置页调整每日投入目标、默认专注时长、提示音、界面动画、训练提示和专注完成通知，并管理个人知识来源、查看文本处理状态与分块结果。
+- 可在设置页调整每日投入目标、默认专注时长、界面字体大小、提示音、界面动画、训练提示和专注完成通知。
+- 独立“知识”工作区集中提供个人知识来源管理、文本处理状态、分块预览、检索实验与引用式回答。
 - 桌面程序与浏览器网站使用不同的本地数据空间，网页中的历史记录不会自动迁移到桌面程序。
 - Windows 桌面服务数据默认位于当前用户的 `%LOCALAPPDATA%\Xirang`，包含 DPAPI 密文、SQLite Checkpoint、向量索引与诊断日志；只读模型位于安装资源目录。跨 Windows 用户恢复时必须重新授权 API Key。
 - 在设置页确认清空设备数据时会同时清除知识库；清除浏览器站点数据也会清除训练记录与本地知识来源。
@@ -206,3 +207,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -File scripts\smoke_installed_desk
 - Agent 只能读取本次快照明确授权的数据类别；知识检索还必须限定在本次逐项选中的来源 ID。DeepSeek Key、分心原始备注、个人笔记正文、已完成待办和训练逐题数据不会进入行动快照。
 - 当前分数是任务表现指数，不是医学诊断、人群百分位或“脑年龄”。
 - 网站不用于诊断或治疗 ADHD 等注意障碍。
+
+## 许可证与安全
+
+项目采用 [MIT License](LICENSE)。贡献前请阅读 [CONTRIBUTING.md](CONTRIBUTING.md)；安全问题请按 [SECURITY.md](SECURITY.md) 私下报告，不要在公开 Issue 中披露漏洞细节。

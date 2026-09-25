@@ -49,8 +49,8 @@ app.whenReady().then(async () => {
     if (event.level === 'error') console.error(`渲染进程：${event.message}`)
   })
 
-  currentStep = '加载并初始化设置页'
-  await window.loadURL(`${previewBase}#/settings`)
+  currentStep = '加载并初始化知识页'
+  await window.loadURL(`${previewBase}#/knowledge`)
   await pause(450)
   await window.webContents.executeJavaScript('localStorage.clear()')
   await clearKnowledgeDatabase(window)

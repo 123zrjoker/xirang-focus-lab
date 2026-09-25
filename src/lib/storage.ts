@@ -78,6 +78,7 @@ const defaultSettings: AppSettings = {
   animationsEnabled: true,
   trainingTipsEnabled: true,
   desktopNotificationsEnabled: false,
+  fontSize: 'standard',
 }
 
 export function createDefaultState(): AppState {
@@ -626,6 +627,9 @@ export function migrateState(value: unknown): AppState {
       desktopNotificationsEnabled: typeof settings.desktopNotificationsEnabled === 'boolean'
         ? settings.desktopNotificationsEnabled
         : defaultSettings.desktopNotificationsEnabled,
+      fontSize: ['small', 'standard', 'large'].includes(settings.fontSize as string)
+        ? settings.fontSize as AppSettings['fontSize']
+        : defaultSettings.fontSize,
     },
     attentionProfile: baselineProfile,
     assessments,
