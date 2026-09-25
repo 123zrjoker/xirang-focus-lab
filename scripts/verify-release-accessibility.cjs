@@ -185,8 +185,29 @@ app.whenReady().then(async () => {
     await waitFor(window, "document.documentElement.dataset.fontSize === 'large'", '大号字体生效')
     await waitFor(window, "getComputedStyle(document.documentElement).getPropertyValue('--font-size-adjust').trim() === '2px'", '大号字体样式更新')
     await window.webContents.executeJavaScript('new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)))')
-    const largeSize = await window.webContents.executeJavaScript(`parseFloat(getComputedStyle(document.querySelector(${JSON.stringify(fontSizeTarget)})).fontSize)`)
-    if (largeSize <= standardSize) throw new Error(`大号字体没有增大：${standardSize} -> ${largeSize}`)
+    const largeTypography = await window.webContents.executeJavaScript(`(() => {
+      const target = document.querySelector(${JSON.stringify(fontSizeTarget)})
+      const probe = document.createElement('span')
+      probe.style.fontSize = 'calc(13px + var(--font-size-adjust))'
+      probe.textContent = 'A'
+      document.body.append(probe)
+      const snapshot = {
+        fontSize: parseFloat(getComputedStyle(target).fontSize),
+        targetAdjust: getComputedStyle(target).getPropertyValue('--font-size-adjust').trim(),
+        parentAdjust: getComputedStyle(target.parentElement).getPropertyValue('--font-size-adjust').trim(),
+        bodyAdjust: getComputedStyle(document.body).getPropertyValue('--font-size-adjust').trim(),
+        rootAdjust: getComputedStyle(document.documentElement).getPropertyValue('--font-size-adjust').trim(),
+        rootInlineAdjust: document.documentElement.style.getPropertyValue('--font-size-adjust').trim(),
+        probeSize: parseFloat(getComputedStyle(probe).fontSize),
+        activeLabel: document.querySelector('.font-size-options button.active')?.textContent?.trim() || '',
+        visibility: document.visibilityState,
+      }
+      probe.remove()
+      return snapshot
+    })()`)
+    if (largeTypography.fontSize <= standardSize) {
+      throw new Error(`大号字体没有增大：${standardSize} -> ${largeTypography.fontSize}；诊断=${JSON.stringify(largeTypography)}`)
+    }
     await assertNoHorizontalOverflow(window, '大号字体设置页')
     await capture(window, 'settings-large-font.png')
     window.hide()
