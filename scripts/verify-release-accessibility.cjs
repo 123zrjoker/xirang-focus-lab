@@ -178,6 +178,8 @@ app.whenReady().then(async () => {
     const standardSize = await window.webContents.executeJavaScript("parseFloat(getComputedStyle(document.querySelector('.setting-toggle-row strong')).fontSize)")
     await window.webContents.executeJavaScript("[...document.querySelectorAll('.font-size-options button')].find((item) => item.textContent.includes('较大')).click()")
     await waitFor(window, "document.documentElement.dataset.fontSize === 'large'", '大号字体生效')
+    await waitFor(window, "getComputedStyle(document.documentElement).getPropertyValue('--font-size-adjust').trim() === '2px'", '大号字体样式更新')
+    await window.webContents.executeJavaScript('new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)))')
     const largeSize = await window.webContents.executeJavaScript("parseFloat(getComputedStyle(document.querySelector('.setting-toggle-row strong')).fontSize)")
     if (largeSize <= standardSize) throw new Error(`大号字体没有增大：${standardSize} -> ${largeSize}`)
     await assertNoHorizontalOverflow(window, '大号字体设置页')
