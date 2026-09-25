@@ -511,7 +511,12 @@ export default function App() {
   else content = <HomePage hasProfile={state.profile.onboardingComplete} onNavigate={navigate} onQuickTask={() => startTask('schulte')} />
 
   return (
-    <AppShell page={page} onNavigate={navigate}>
+    <AppShell
+      key={state.settings.fontSize}
+      page={page}
+      fontSizeAdjustment={fontSizeAdjustments[state.settings.fontSize]}
+      onNavigate={navigate}
+    >
       {storageCompatibilityIssue && (
         <div className="storage-compatibility-alert" role="alert">
           <strong>本机数据已进入只读保护</strong>

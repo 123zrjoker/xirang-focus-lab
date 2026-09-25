@@ -1,9 +1,10 @@
-import type { ReactNode } from 'react'
+import type { CSSProperties, ReactNode } from 'react'
 import type { Page } from '../types'
 
 interface AppShellProps {
   page: Page
   children: ReactNode
+  fontSizeAdjustment: string
   onNavigate: (page: Page) => void
 }
 
@@ -17,10 +18,13 @@ const navItems: { page: Page; label: string; icon: string }[] = [
   { page: 'settings', label: '设置', icon: '⚙' },
 ]
 
-export function AppShell({ page, children, onNavigate }: AppShellProps) {
+export function AppShell({ page, children, fontSizeAdjustment, onNavigate }: AppShellProps) {
   const appPage = page === 'assessment' ? 'home' : page === 'launch' ? 'notes' : page
   return (
-    <div className="app-shell">
+    <div
+      className="app-shell"
+      style={{ '--font-size-adjust': fontSizeAdjustment } as CSSProperties}
+    >
       <header className="site-header">
         <button className="brand" type="button" onClick={() => onNavigate('home')}>
           <span className="brand-mark"><i /><i /><i /></span>
