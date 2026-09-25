@@ -79,7 +79,10 @@ app.whenReady().then(async () => {
     show: false,
     width: 1_280,
     height: 900,
-    webPreferences: { partition: `qa-release-accessibility-${Date.now()}` },
+    webPreferences: {
+      partition: `qa-release-accessibility-${Date.now()}`,
+      backgroundThrottling: false,
+    },
   })
   window.webContents.on('console-message', (event) => {
     if (event.level === 'error') console.error(`渲染进程：${event.message}`)
@@ -172,6 +175,7 @@ app.whenReady().then(async () => {
 
     currentStep = '验证字体大小设置'
     window.setSize(1280, 900)
+    window.showInactive()
     if (previewBase) await window.loadURL(`${previewBase.replace(/\/$/, '')}/#/settings`)
     else await window.loadFile(distIndex, { hash: '/settings' })
     await waitFor(window, "document.querySelectorAll('.font-size-options button').length === 3", '字体大小选项')
@@ -185,6 +189,7 @@ app.whenReady().then(async () => {
     if (largeSize <= standardSize) throw new Error(`大号字体没有增大：${standardSize} -> ${largeSize}`)
     await assertNoHorizontalOverflow(window, '大号字体设置页')
     await capture(window, 'settings-large-font.png')
+    window.hide()
 
     currentStep = '验证未来版本数据只读保护'
     const futureRaw = JSON.stringify({ schemaVersion: 999, profile: { goal: 'work' }, sessions: [] })
