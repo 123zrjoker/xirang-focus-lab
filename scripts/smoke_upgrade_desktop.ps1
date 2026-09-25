@@ -34,6 +34,17 @@ function Resolve-ProjectPath([string]$Path) {
   return (Get-Item -LiteralPath $candidate).FullName
 }
 
+function Get-Sha256Hex([string]$Path) {
+  $sha256 = [System.Security.Cryptography.SHA256]::Create()
+  $stream = [System.IO.File]::OpenRead($Path)
+  try {
+    return ([System.BitConverter]::ToString($sha256.ComputeHash($stream))).Replace('-', '')
+  } finally {
+    $stream.Dispose()
+    $sha256.Dispose()
+  }
+}
+
 function Test-SafeWorkspaceRoot([string]$Path) {
   $resolved = [System.IO.Path]::GetFullPath($Path)
   $relative = $resolved.Substring($smokeParent.Length).TrimStart('\')
@@ -214,8 +225,8 @@ try {
       throw "Upgrade fixture was not persisted: $requiredPath"
     }
   }
-  $credentialHashBefore = (Get-FileHash -LiteralPath $credentialPath -Algorithm SHA256).Hash
-  $rendererMarkerHashBefore = (Get-FileHash -LiteralPath $rendererMarkerPath -Algorithm SHA256).Hash
+  $credentialHashBefore = Get-Sha256Hex $credentialPath
+  $rendererMarkerHashBefore = Get-Sha256Hex $rendererMarkerPath
 
   $candidateInstallExit = Install-Version $candidateSetup
   $candidateApp = Find-InstalledApp
@@ -227,7 +238,7 @@ try {
 
   $credentialPreserved = $candidateCredential.configured `
     -and $candidateCredential.credentialSource -eq 'windows_dpapi_current_user' `
-    -and (Get-FileHash -LiteralPath $credentialPath -Algorithm SHA256).Hash -eq $credentialHashBefore
+    -and (Get-Sha256Hex $credentialPath) -eq $credentialHashBefore
   $indexPreserved = $candidateIndex.ready `
     -and $candidateIndex.fingerprint -eq $baselineIndex.fingerprint `
     -and $candidateIndex.chunkCount -eq $baselineIndex.chunkCount
@@ -235,7 +246,7 @@ try {
     -and $candidateAgent.status -eq $baselineAgent.status `
     -and $candidateAgent.graphVersion -eq $baselineAgent.graphVersion
   $rendererDataPreserved = (Test-Path -LiteralPath $rendererMarkerPath -PathType Leaf) `
-    -and (Get-FileHash -LiteralPath $rendererMarkerPath -Algorithm SHA256).Hash -eq $rendererMarkerHashBefore
+    -and (Get-Sha256Hex $rendererMarkerPath) -eq $rendererMarkerHashBefore
 
   if (-not $credentialPreserved) { throw 'DPAPI credential was not preserved across the upgrade.' }
   if (-not $indexPreserved) { throw 'Vector index was not preserved across the upgrade.' }
