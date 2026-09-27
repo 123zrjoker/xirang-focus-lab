@@ -1,6 +1,6 @@
 # 息壤 · 注意力训练与专注启动实验室
 
-> 当前正式版本为 **1.1.0**。招聘方与代码审阅者可从 [`docs/portfolio/README.md`](docs/portfolio/README.md) 开始：10 分钟项目导览、脱敏演示数据、架构与数据边界、复现命令、技术决策、失败案例和指标证据集中在同一入口。
+> 当前源码展示版本为 **1.1.0**。本仓库不提供预编译安装包；招聘方与代码审阅者可从 [`docs/portfolio/README.md`](docs/portfolio/README.md) 开始：10 分钟项目导览、脱敏演示数据、架构与数据边界、复现命令、技术决策、失败案例和指标证据集中在同一入口。
 
 1.1.0 将个人知识来源、文本处理、检索实验和引用式回答集中到独立“知识”工作区，并新增较小、标准、较大三档界面字体。项目已建立 Windows CI、CycloneDX SBOM、安全审计、无障碍与迁移烟测、Agent Evaluation、API 性能门禁，以及 Setup / Portable 桌面制品验收链路。
 
@@ -147,6 +147,8 @@ npm run quality:security
 
 ## Windows 桌面程序
 
+本节命令用于从源码进行本地开发与桌面能力验收。仓库的 GitHub Release 仅保留版本说明和源码归档，不提供预编译的 Setup 或 Portable 文件。
+
 开发环境中直接构建并打开桌面程序。Electron 会自动使用 `.venv311` 启动 API，不需要另开终端运行 `dev:api`：
 
 ```bash
@@ -174,7 +176,7 @@ npm run desktop:pack
 npm run desktop:smoke:packaged
 ```
 
-生成 Windows 安装版和免安装便携版：
+如需在本机验证打包能力，可生成 Windows 安装版和免安装便携版：
 
 ```bash
 npm run desktop:dist
@@ -186,9 +188,9 @@ npm run desktop:dist
 powershell -NoProfile -ExecutionPolicy Bypass -File scripts\smoke_installed_desktop.ps1
 ```
 
-输出文件位于 `release/`。安装版会创建桌面和开始菜单快捷方式；便携版无需安装即可运行。打包产物内含 Python sidecar 和固定版本本地模型，目标机器不需要安装 Python、创建虚拟环境或手动启动 API。1.1.0 的门禁、制品与 SHA-256 见 [`1.1.0 发布进度`](artifacts/evals/1.1.0-release-progress.md)。
+本地输出文件位于被 Git 忽略的 `release/`，只用于开发者自测，不作为公开下载内容。安装版会创建桌面和开始菜单快捷方式；便携版无需安装即可运行。打包产物内含 Python sidecar 和固定版本本地模型，目标机器不需要安装 Python、创建虚拟环境或手动启动 API。1.1.0 的本地构建与验收记录见 [`1.1.0 发布进度`](artifacts/evals/1.1.0-release-progress.md)。
 
-第一版本地构建尚未配置商业代码签名证书，因此 Windows SmartScreen 可能显示“未知发布者”。自用时可核对文件来源和 SHA-256 后运行；公开分发前应购买并配置 Windows 代码签名证书。
+本地构建未配置商业代码签名证书，因此自行生成的 Windows 程序可能触发 SmartScreen“未知发布者”提示；该限制不影响源码、测试和工程证据展示。
 
 ## 数据与边界
 
