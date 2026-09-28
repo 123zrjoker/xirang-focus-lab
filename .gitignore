@@ -20,3 +20,11 @@ server/data/
 artifacts/evals/*.json
 artifacts/performance/*.json
 artifacts/security/*.json
+
+# Local development instructions, handoff notes, and interview preparation
+/AGENTS.md
+/*版本项目总结与下次对话接续说明.md
+/项目总结与接续说明.md
+/第三阶段完成总结与下次对话接续说明.md
+/本次对话总结与下次对话前置参考资料-*.md
+/docs/interview/
