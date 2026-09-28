@@ -23,6 +23,7 @@ artifacts/security/*.json
 
 # Local development instructions, handoff notes, and interview preparation
 /AGENTS.md
+/scripts/*.local.ps1
 /*版本项目总结与下次对话接续说明.md
 /项目总结与接续说明.md
 /第三阶段完成总结与下次对话接续说明.md
